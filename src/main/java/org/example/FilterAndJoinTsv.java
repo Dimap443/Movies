@@ -22,6 +22,10 @@ import java.time.Duration;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.zip.GZIPInputStream;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
+import java.awt.Desktop;
+
 
 public class FilterAndJoinTsv extends JFrame {
 
@@ -34,7 +38,7 @@ public class FilterAndJoinTsv extends JFrame {
 
     // Thresholds for second file
     private static final double SECOND_COL2_THRESHOLD = 6.8;
-    private static final double SECOND_COL3_THRESHOLD = 1999.0;
+    private static final double SECOND_COL3_THRESHOLD = 4999.0;
 
     private static final boolean FIRST_HAS_HEADER = false;
     private static final boolean SECOND_HAS_HEADER = false;
@@ -49,12 +53,49 @@ public class FilterAndJoinTsv extends JFrame {
         super("Movie Data Updater");
 
         // Table model: Movie title, year, genre, rating, viewers
-        String[] columnNames = {"Title", "Year", "Genre", "Rating", "Viewers"};
+        String[] columnNames = {"ID", "Title", "Year", "Genre", "Rating", "Voted"};  // Added
         tableModel = new DefaultTableModel(columnNames, 0);
         // GUI components
         JTable table = new JTable(tableModel);
+
         sorter = new TableRowSorter<>(tableModel);
         table.setRowSorter(sorter);  // enable sorting and filtering [web:92][web:90][web:91]
+
+        // NEW: HIDE COLUMN 0 (IMDb ID)
+        table.getColumnModel().getColumn(0).setMinWidth(0);
+        table.getColumnModel().getColumn(0).setMaxWidth(0);
+        table.getColumnModel().getColumn(0).setWidth(0);
+        table.getColumnModel().getColumn(0).setPreferredWidth(0);
+        table.getTableHeader().getColumnModel().getColumn(0).setWidth(0);
+
+// NEW: Make table READ-ONLY
+        table.setEnabled(true);                    // Selection works
+        table.setDefaultEditor(Object.class, null); // No editing allowed
+
+        // NEW: Double-click to open IMDb page
+        table.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                if (e.getClickCount() == 2) {  // Double-click
+                    int row = table.rowAtPoint(e.getPoint());
+                    if (row >= 0) {
+                        int modelRow = table.convertRowIndexToModel(row);  // Account for sorting/filtering
+                        String imdbId = (String) tableModel.getValueAt(modelRow, 0);  // First column (index 0)
+
+                        if (imdbId != null && !imdbId.isEmpty()) {
+                            try {
+                                String imdbUrl = "https://www.imdb.com/title/" + imdbId;
+                                Desktop.getDesktop().browse(new URI(imdbUrl));  // Opens default browser
+                            } catch (Exception ex) {
+                                JOptionPane.showMessageDialog(FilterAndJoinTsv.this,
+                                        "Cannot open browser: " + ex.getMessage(),
+                                        "Error", JOptionPane.ERROR_MESSAGE);
+                            }
+                        }
+                    }
+                }
+            }
+        });
 
         JScrollPane scrollPane = new JScrollPane(table);  // scrollable table [web:96][web:99]
 
@@ -316,14 +357,15 @@ public class FilterAndJoinTsv extends JFrame {
 
                 // ... ratings data appended later ...
 
-                if (cols.length >= 6) {  // Ensure we have enough columns
+                if (cols.length >= 5) {  // Ensure we have enough columns
+                    String IMDB_ID = cols[0]; //
                     String title = cols[2];        // primaryTitle
                     String year = cols[5];         // Year
                     String genre = cols.length > 8 ? cols[8] : "";       // Genre
                     String rating = cols.length > 9 ? cols[9] : "";      // Rating
-                    String viewers = cols.length > 10 ? cols[10] : "";   // Viewers
+                    String voted = cols.length > 10 ? cols[10] : "";   // Voted
 
-                    tableModel.addRow(new Object[]{title, year, genre, rating, viewers});
+                    tableModel.addRow(new Object[]{IMDB_ID, title, year, genre, rating, voted});
                 }
             }
         }

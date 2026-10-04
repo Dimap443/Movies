@@ -237,6 +237,14 @@ public class FilterAndJoinTsv extends JFrame {
     private void applyFilter() {
         List<RowFilter<DefaultTableModel, Integer>> filters = new ArrayList<>();
 
+        // Always hide movies with no known country (they stay in merged.tsv)
+        filters.add(new RowFilter<>() {
+            @Override
+            public boolean include(Entry<? extends DefaultTableModel, ? extends Integer> entry) {
+                return !entry.getStringValue(COUNTRY_COLUMN).isEmpty();
+            }
+        });
+
         String text = filterField.getText();
         if (text != null && !text.isEmpty()) {
             // Quote the input so characters like ( [ * + are matched literally instead of as regex syntax
@@ -255,7 +263,7 @@ public class FilterAndJoinTsv extends JFrame {
             });
         }
 
-        sorter.setRowFilter(filters.isEmpty() ? null : RowFilter.andFilter(filters));
+        sorter.setRowFilter(RowFilter.andFilter(filters));
     }
 
     // Rebuild the "Hide country" choices from the table, keeping the current selection if still present
@@ -680,6 +688,7 @@ public class FilterAndJoinTsv extends JFrame {
             }
         }
         refreshCountryChoices();
+        applyFilter();  // hide rows with no country right after loading
     }
 
     private static String blankIfMissing(String value) {

@@ -90,6 +90,9 @@ public class FilterAndJoinTsv extends JFrame {
 
     private static final int COUNTRY_COLUMN = 6;
 
+    // Frequently selected countries, listed at the top of "Hide country" before the alphabetical rest
+    private static final List<String> FREQUENT_COUNTRIES = List.of("India");
+
     // Thresholds for second file
     private static final double SECOND_COL2_THRESHOLD = 6.8;
     private static final double SECOND_COL3_THRESHOLD = 999.0;
@@ -237,14 +240,6 @@ public class FilterAndJoinTsv extends JFrame {
     private void applyFilter() {
         List<RowFilter<DefaultTableModel, Integer>> filters = new ArrayList<>();
 
-        // Always hide movies with no known country (they stay in merged.tsv)
-        filters.add(new RowFilter<>() {
-            @Override
-            public boolean include(Entry<? extends DefaultTableModel, ? extends Integer> entry) {
-                return !entry.getStringValue(COUNTRY_COLUMN).isEmpty();
-            }
-        });
-
         String text = filterField.getText();
         if (text != null && !text.isEmpty()) {
             // Quote the input so characters like ( [ * + are matched literally instead of as regex syntax
@@ -253,17 +248,19 @@ public class FilterAndJoinTsv extends JFrame {
 
         String hiddenCountry = (String) hideCountryBox.getSelectedItem();
         if (hiddenCountry != null && !hiddenCountry.isEmpty()) {
-            // Co-productions list several countries ("France,India"); hide the movie if any of them matches
+            // Co-productions list several countries ("France,India"); hide the movie if any of them matches.
+            // Movies with no known country are hidden too, since they may be from the hidden country
+            // (they stay in merged.tsv).
             filters.add(new RowFilter<>() {
                 @Override
                 public boolean include(Entry<? extends DefaultTableModel, ? extends Integer> entry) {
                     String countries = entry.getStringValue(COUNTRY_COLUMN);
-                    return !Arrays.asList(countries.split(",")).contains(hiddenCountry);
+                    return !countries.isEmpty() && !Arrays.asList(countries.split(",")).contains(hiddenCountry);
                 }
             });
         }
 
-        sorter.setRowFilter(RowFilter.andFilter(filters));
+        sorter.setRowFilter(filters.isEmpty() ? null : RowFilter.andFilter(filters));
     }
 
     // Rebuild the "Hide country" choices from the table, keeping the current selection if still present
@@ -279,9 +276,14 @@ public class FilterAndJoinTsv extends JFrame {
         String selected = (String) hideCountryBox.getSelectedItem();
         DefaultComboBoxModel<String> choices = new DefaultComboBoxModel<>();
         choices.addElement("");
+        for (String frequent : FREQUENT_COUNTRIES) {
+            if (countries.remove(frequent)) {  // only if present in the data, and not listed twice
+                choices.addElement(frequent);
+            }
+        }
         countries.forEach(choices::addElement);
         hideCountryBox.setModel(choices);
-        hideCountryBox.setSelectedItem(countries.contains(selected) ? selected : "");
+        hideCountryBox.setSelectedItem(choices.getIndexOf(selected) >= 0 ? selected : "");
     }
 
     private void runUpdate(ActionEvent evt) {
@@ -688,7 +690,7 @@ public class FilterAndJoinTsv extends JFrame {
             }
         }
         refreshCountryChoices();
-        applyFilter();  // hide rows with no country right after loading
+        applyFilter();  // re-apply the current filters to the reloaded rows
     }
 
     private static String blankIfMissing(String value) {

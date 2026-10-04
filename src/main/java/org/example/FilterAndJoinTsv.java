@@ -26,9 +26,16 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.regex.Matcher;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.regex.Pattern;
@@ -51,6 +58,32 @@ public class FilterAndJoinTsv extends JFrame {
     private static final String WIKIDATA_SPARQL_URL = "https://query.wikidata.org/sparql";
     private static final String WIKIDATA_USER_AGENT = "Movies2/1.0 (https://github.com/Dimap443/Movies)";
     private static final int WIKIDATA_BATCH_SIZE = 2000;
+
+    // TMDb fills in titles Wikidata doesn't know. The API token is read from the TMDB_API_TOKEN
+    // environment variable or the git-ignored tmdb.token file; without one this step is skipped.
+    private static final String TMDB_MOVIE_URL = "https://api.themoviedb.org/3/movie/";  // accepts IMDb IDs
+    private static final String TMDB_TOKEN_ENV = "TMDB_API_TOKEN";
+    private static final String TMDB_TOKEN_FILE = "tmdb.token";
+    private static final int TMDB_THREADS = 8;          // stays well under TMDb's ~50 requests/second
+    private static final int TMDB_MAX_ATTEMPTS = 4;     // retries for HTTP 429 (rate limited)
+    private static final Pattern TMDB_ORIGIN_COUNTRY = Pattern.compile("\"origin_country\":\\[([^\\]]*)]");
+    private static final Pattern TMDB_PRODUCTION_COUNTRIES = Pattern.compile("\"production_countries\":\\[([^\\]]*)]");
+    private static final Pattern TMDB_CODE = Pattern.compile("\"([A-Z]{2})\"");
+    // Countries whose Java (CLDR) English name differs from the name Wikidata uses
+    private static final Map<String, String> WIKIDATA_COUNTRY_NAMES = Map.ofEntries(
+            Map.entry("BA", "Bosnia and Herzegovina"),
+            Map.entry("BS", "The Bahamas"),
+            Map.entry("CD", "Democratic Republic of the Congo"),
+            Map.entry("CG", "Republic of the Congo"),
+            Map.entry("CI", "Ivory Coast"),
+            Map.entry("CN", "People's Republic of China"),
+            Map.entry("CZ", "Czech Republic"),
+            Map.entry("GM", "The Gambia"),
+            Map.entry("HK", "Hong Kong"),
+            Map.entry("MM", "Myanmar"),
+            Map.entry("MO", "Macau"),
+            Map.entry("PS", "Palestine"),
+            Map.entry("TR", "Turkey"));
 
     // IMDb's marker for a missing value
     private static final String MISSING = "\\N";
@@ -259,17 +292,30 @@ public class FilterAndJoinTsv extends JFrame {
                 Map<String, String[]> firstFiltered = filterFirstFile();
                 Map<String, String[]> secondFiltered = filterSecondFile();
 
-                // Step 2b: country of origin, only for titles that survive the join.
-                // Not fatal: if Wikidata is unavailable the Country column is left blank.
+                // Step 2b: country of origin, only for titles that survive the join: Wikidata first,
+                // then TMDb for the titles Wikidata doesn't know.
+                // Not fatal: if a source is unavailable its titles are left blank.
                 Set<String> joinedKeys = new HashSet<>(firstFiltered.keySet());
                 joinedKeys.retainAll(secondFiltered.keySet());
                 Map<String, String> countries = new HashMap<>();
                 boolean countriesLoaded = true;
                 try {
-                    countries = fetchCountries(joinedKeys);
+                    countries.putAll(fetchWikidataCountries(joinedKeys));
                 } catch (IOException e) {
                     countriesLoaded = false;
-                    LOG.log(Level.WARNING, "Country lookup failed", e);
+                    LOG.log(Level.WARNING, "Wikidata country lookup failed", e);
+                }
+
+                String tmdbToken = loadTmdbToken();
+                if (tmdbToken != null) {
+                    Set<String> missing = new HashSet<>(joinedKeys);
+                    missing.removeAll(countries.keySet());
+                    try {
+                        countries.putAll(fetchTmdbCountries(missing, tmdbToken));
+                    } catch (IOException e) {
+                        countriesLoaded = false;
+                        LOG.log(Level.WARNING, "TMDb country lookup failed", e);
+                    }
                 }
 
                 // Steps 3–4: merge and save
@@ -285,7 +331,7 @@ public class FilterAndJoinTsv extends JFrame {
                     loadMergedFileIntoTable();
                     statusLabel.setText(countriesLoaded
                             ? "Update complete"
-                            : "Update complete (country lookup failed - see log)");
+                            : "Update complete (country lookup incomplete - see log)");
                 } catch (Exception ex) {
                     statusLabel.setText("Error: " + ex.getMessage());
                     LOG.log(Level.SEVERE, "Update failed", ex);
@@ -389,7 +435,7 @@ public class FilterAndJoinTsv extends JFrame {
     // Step 2b: country of origin from Wikidata, queried in batches of IMDb IDs.
     // Result per key: comma-separated English country names ("France,Poland"); keys Wikidata
     // doesn't know are absent.
-    private static Map<String, String> fetchCountries(Set<String> keys)
+    private static Map<String, String> fetchWikidataCountries(Set<String> keys)
             throws IOException, InterruptedException {
         Map<String, Set<String>> countries = new HashMap<>();
         List<String> ids = new ArrayList<>(keys);
@@ -445,6 +491,116 @@ public class FilterAndJoinTsv extends JFrame {
             return value;
         }
         return value.substring(first + 1, last).replace("\\\"", "\"").replace("\\\\", "\\");
+    }
+
+    // TMDb API token from the environment or the local token file; null if neither is set
+    private static String loadTmdbToken() {
+        String token = System.getenv(TMDB_TOKEN_ENV);
+        Path tokenFile = Paths.get(TMDB_TOKEN_FILE);
+        if ((token == null || token.isBlank()) && Files.exists(tokenFile)) {
+            try {
+                token = Files.readString(tokenFile, StandardCharsets.UTF_8);
+            } catch (IOException e) {
+                LOG.log(Level.WARNING, "Cannot read " + TMDB_TOKEN_FILE, e);
+            }
+        }
+        if (token == null || token.isBlank()) {
+            LOG.info("No TMDb token (" + TMDB_TOKEN_ENV + " or " + TMDB_TOKEN_FILE + "), skipping TMDb lookup");
+            return null;
+        }
+        return token.trim();
+    }
+
+    // Step 2c: country of origin from TMDb, one request per IMDb ID, a few in parallel.
+    // Result per key: comma-separated English country names; keys TMDb doesn't know are absent.
+    private static Map<String, String> fetchTmdbCountries(Set<String> keys, String token)
+            throws IOException, InterruptedException {
+        Map<String, String> data = new ConcurrentHashMap<>();
+        HttpClient client = HttpClient.newBuilder()
+                .connectTimeout(Duration.ofSeconds(30))
+                .build();
+
+        ExecutorService pool = Executors.newFixedThreadPool(TMDB_THREADS);
+        try {
+            List<Future<?>> futures = new ArrayList<>();
+            for (String id : keys) {
+                futures.add(pool.submit(() -> {
+                    String countries = fetchTmdbCountry(client, token, id);
+                    if (countries != null) {
+                        data.put(id, countries);
+                    }
+                    return null;
+                }));
+            }
+            for (Future<?> future : futures) {
+                future.get();
+            }
+        } catch (ExecutionException e) {
+            if (e.getCause() instanceof IOException io) {
+                throw io;
+            }
+            throw new IOException(e.getCause());
+        } finally {
+            pool.shutdownNow();
+        }
+        return data;
+    }
+
+    // One TMDb lookup; null when TMDb has no such movie or no country for it
+    private static String fetchTmdbCountry(HttpClient client, String token, String imdbId)
+            throws IOException, InterruptedException {
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(TMDB_MOVIE_URL + imdbId))
+                .timeout(Duration.ofSeconds(30))
+                .header("Accept", "application/json")
+                .header("Authorization", "Bearer " + token)
+                .build();
+
+        for (int attempt = 1; ; attempt++) {
+            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+            int status = response.statusCode();
+            if (status == 404) {
+                return null;
+            }
+            if (status == 429 && attempt < TMDB_MAX_ATTEMPTS) {
+                Thread.sleep(1000L * attempt);  // rate limited: back off and retry
+                continue;
+            }
+            if (status != 200) {
+                throw new IOException("TMDb lookup of " + imdbId + " failed: HTTP " + status);
+            }
+            return parseTmdbCountries(response.body());
+        }
+    }
+
+    // Prefers "origin_country" (["IN"]), falls back to "production_countries" ([{"iso_3166_1":"IN",...}]).
+    // Production companies also have an "origin_country", but as a string, so the [ ] patterns skip it.
+    private static String parseTmdbCountries(String json) {
+        Set<String> names = new TreeSet<>();
+        for (Pattern field : new Pattern[]{TMDB_ORIGIN_COUNTRY, TMDB_PRODUCTION_COUNTRIES}) {
+            Matcher array = field.matcher(json);
+            if (array.find()) {
+                Matcher code = TMDB_CODE.matcher(array.group(1));
+                while (code.find()) {
+                    names.add(countryName(code.group(1)));
+                }
+            }
+            if (!names.isEmpty()) {
+                break;
+            }
+        }
+        return names.isEmpty() ? null : String.join(",", names);
+    }
+
+    // ISO code to the English name Wikidata uses, so both sources agree: "IN" -> India, "TR" -> Turkey
+    private static String countryName(String isoCode) {
+        String override = WIKIDATA_COUNTRY_NAMES.get(isoCode);
+        if (override != null) {
+            return override;
+        }
+        String name = Locale.of("", isoCode).getDisplayCountry(Locale.ENGLISH)
+                .replace(" & ", " and ");          // "Trinidad & Tobago"
+        return name.startsWith("St. ") ? "Saint " + name.substring(4) : name;  // "St. Lucia"
     }
 
     // Steps 3–4: merge and save

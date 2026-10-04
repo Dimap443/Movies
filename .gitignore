@@ -39,3 +39,6 @@ build/
 .DS_Store
 first.tsv
 second.tsv
+
+### TMDb API token (local only, never commit)
+tmdb.token

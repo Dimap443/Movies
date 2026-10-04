@@ -10,6 +10,7 @@ import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -21,6 +22,7 @@ import java.nio.file.Paths;
 import java.time.Duration;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.regex.Pattern;
 import java.util.zip.GZIPInputStream;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
@@ -38,7 +40,7 @@ public class FilterAndJoinTsv extends JFrame {
 
     // Thresholds for second file
     private static final double SECOND_COL2_THRESHOLD = 6.8;
-    private static final double SECOND_COL3_THRESHOLD = 4999.0;
+    private static final double SECOND_COL3_THRESHOLD = 999.0;
 
     private static final boolean FIRST_HAS_HEADER = false;
     private static final boolean SECOND_HAS_HEADER = false;
@@ -54,7 +56,17 @@ public class FilterAndJoinTsv extends JFrame {
 
         // Table model: Movie title, year, genre, rating, viewers
         String[] columnNames = {"ID", "Title", "Year", "Genre", "Rating", "Voted"};  // Added
-        tableModel = new DefaultTableModel(columnNames, 0);
+        tableModel = new DefaultTableModel(columnNames, 0) {
+            // Report numeric types so the sorter compares numbers, not strings ("10000" < "9999")
+            @Override
+            public Class<?> getColumnClass(int column) {
+                return switch (column) {
+                    case 2, 5 -> Integer.class;  // Year, Voted
+                    case 4 -> Double.class;      // Rating
+                    default -> String.class;
+                };
+            }
+        };
         // GUI components
         JTable table = new JTable(tableModel);
 
@@ -160,7 +172,8 @@ public class FilterAndJoinTsv extends JFrame {
         if (text == null || text.isEmpty()) {
             sorter.setRowFilter(null);
         } else {
-            sorter.setRowFilter(RowFilter.regexFilter("(?i)" + text));  // case‑insensitive [web:90][web:92]
+            // Quote the input so characters like ( [ * + are matched literally instead of as regex syntax
+            sorter.setRowFilter(RowFilter.regexFilter("(?i)" + Pattern.quote(text)));  // case‑insensitive
         }
     }
 
@@ -221,29 +234,17 @@ public class FilterAndJoinTsv extends JFrame {
         try (InputStream in = client.send(request, HttpResponse.BodyHandlers.ofInputStream()).body();
              BufferedInputStream bis = new BufferedInputStream(in);
              GZIPInputStream gzip = new GZIPInputStream(bis);
+             BufferedReader reader = new BufferedReader(new InputStreamReader(gzip, StandardCharsets.UTF_8));
              BufferedWriter writer = Files.newBufferedWriter(outputPath, StandardCharsets.UTF_8)) {
 
-            byte[] buffer = new byte[8192];
-            int len;
-            StringBuilder lineBuilder = new StringBuilder();
-
-            while ((len = gzip.read(buffer)) != -1) {
-                String chunk = new String(buffer, 0, len, StandardCharsets.UTF_8);
-                lineBuilder.append(chunk);
-
-                int pos;
-                while ((pos = lineBuilder.indexOf("\n")) >= 0) {
-                    String line = lineBuilder.substring(0, pos).trim();
-                    if (!line.isEmpty()) {
-                        writer.write(line);
-                        writer.newLine();
-                    }
-                    lineBuilder.delete(0, pos + 1);
+            // Decode via a Reader so multi-byte UTF-8 characters are never split across buffer boundaries
+            String line;
+            while ((line = reader.readLine()) != null) {
+                line = line.trim();
+                if (!line.isEmpty()) {
+                    writer.write(line);
+                    writer.newLine();
                 }
-            }
-
-            if (!lineBuilder.isEmpty()) {
-                writer.write(lineBuilder.toString().trim());
             }
         }
     }
@@ -360,14 +361,31 @@ public class FilterAndJoinTsv extends JFrame {
                 if (cols.length >= 5) {  // Ensure we have enough columns
                     String IMDB_ID = cols[0]; //
                     String title = cols[2];        // primaryTitle
-                    String year = cols[5];         // Year
-                    String genre = cols.length > 8 ? cols[8] : "";       // Genre
-                    String rating = cols.length > 9 ? cols[9] : "";      // Rating
-                    String voted = cols.length > 10 ? cols[10] : "";   // Voted
+                    Integer year = parseIntOrNull(cols[5]);                        // Year
+                    String genre = cols.length > 8 ? cols[8] : "";                 // Genre
+                    Double rating = cols.length > 9 ? parseDoubleOrNull(cols[9]) : null;   // Rating
+                    Integer voted = cols.length > 10 ? parseIntOrNull(cols[10]) : null;    // Voted
 
                     tableModel.addRow(new Object[]{IMDB_ID, title, year, genre, rating, voted});
                 }
             }
+        }
+    }
+
+    // IMDb uses "\N" for missing values; those become null (empty cell, sorted first)
+    private static Integer parseIntOrNull(String value) {
+        try {
+            return Integer.valueOf(value);
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    private static Double parseDoubleOrNull(String value) {
+        try {
+            return Double.valueOf(value);
+        } catch (NumberFormatException e) {
+            return null;
         }
     }
 

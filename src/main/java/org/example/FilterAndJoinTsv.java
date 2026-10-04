@@ -66,8 +66,8 @@ public class FilterAndJoinTsv extends JFrame {
     private static final String TMDB_TOKEN_FILE = "tmdb.token";
     private static final int TMDB_THREADS = 8;          // stays well under TMDb's ~50 requests/second
     private static final int TMDB_MAX_ATTEMPTS = 4;     // retries for HTTP 429 (rate limited)
-    private static final Pattern TMDB_ORIGIN_COUNTRY = Pattern.compile("\"origin_country\":\\[([^\\]]*)]");
-    private static final Pattern TMDB_PRODUCTION_COUNTRIES = Pattern.compile("\"production_countries\":\\[([^\\]]*)]");
+    private static final Pattern TMDB_ORIGIN_COUNTRY = Pattern.compile("\"origin_country\":\\[(.*?)]");
+    private static final Pattern TMDB_PRODUCTION_COUNTRIES = Pattern.compile("\"production_countries\":\\[(.*?)]");
     private static final Pattern TMDB_CODE = Pattern.compile("\"([A-Z]{2})\"");
     // Countries whose Java (CLDR) English name differs from the name Wikidata uses
     private static final Map<String, String> WIKIDATA_COUNTRY_NAMES = Map.ofEntries(
@@ -268,7 +268,7 @@ public class FilterAndJoinTsv extends JFrame {
             }
         }
 
-        Object selected = hideCountryBox.getSelectedItem();
+        String selected = (String) hideCountryBox.getSelectedItem();
         DefaultComboBoxModel<String> choices = new DefaultComboBoxModel<>();
         choices.addElement("");
         countries.forEach(choices::addElement);
@@ -520,8 +520,8 @@ public class FilterAndJoinTsv extends JFrame {
                 .connectTimeout(Duration.ofSeconds(30))
                 .build();
 
-        ExecutorService pool = Executors.newFixedThreadPool(TMDB_THREADS);
-        try {
+        // close() waits for running lookups; on failure shutdownNow() interrupts them first
+        try (ExecutorService pool = Executors.newFixedThreadPool(TMDB_THREADS)) {
             List<Future<?>> futures = new ArrayList<>();
             for (String id : keys) {
                 futures.add(pool.submit(() -> {
@@ -532,21 +532,27 @@ public class FilterAndJoinTsv extends JFrame {
                     return null;
                 }));
             }
-            for (Future<?> future : futures) {
-                future.get();
+            try {
+                for (Future<?> future : futures) {
+                    future.get();
+                }
+            } catch (ExecutionException e) {
+                pool.shutdownNow();
+                if (e.getCause() instanceof IOException io) {
+                    throw io;
+                }
+                throw new IOException(e.getCause());
+            } catch (InterruptedException e) {
+                pool.shutdownNow();
+                throw e;
             }
-        } catch (ExecutionException e) {
-            if (e.getCause() instanceof IOException io) {
-                throw io;
-            }
-            throw new IOException(e.getCause());
-        } finally {
-            pool.shutdownNow();
         }
         return data;
     }
 
-    // One TMDb lookup; null when TMDb has no such movie or no country for it
+    // One TMDb lookup; null when TMDb has no such movie or no country for it.
+    // The sleep in the retry loop is a bounded back-off after HTTP 429, not busy-waiting.
+    @SuppressWarnings("BusyWait")
     private static String fetchTmdbCountry(HttpClient client, String token, String imdbId)
             throws IOException, InterruptedException {
         HttpRequest request = HttpRequest.newBuilder()

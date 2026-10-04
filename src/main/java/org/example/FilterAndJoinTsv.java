@@ -22,6 +22,8 @@ import java.nio.file.Paths;
 import java.time.Duration;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import java.util.regex.Pattern;
 import java.util.zip.GZIPInputStream;
 import java.awt.event.MouseAdapter;
@@ -44,6 +46,8 @@ public class FilterAndJoinTsv extends JFrame {
 
     private static final boolean FIRST_HAS_HEADER = false;
     private static final boolean SECOND_HAS_HEADER = false;
+
+    private static final Logger LOG = Logger.getLogger(FilterAndJoinTsv.class.getName());
 
     private final DefaultTableModel tableModel;
     private final TableRowSorter<DefaultTableModel> sorter;
@@ -160,7 +164,7 @@ public class FilterAndJoinTsv extends JFrame {
                 statusLabel.setText("Loaded existing data from " + MERGED_FILE);
             } catch (IOException e) {
                 statusLabel.setText("Error loading existing data: " + e.getMessage());
-                e.printStackTrace();
+                LOG.log(Level.SEVERE, "Failed to load " + MERGED_FILE, e);
             }
         } else {
             statusLabel.setText("No existing data - press Update to download");
@@ -206,7 +210,7 @@ public class FilterAndJoinTsv extends JFrame {
                     statusLabel.setText("Update complete");
                 } catch (Exception ex) {
                     statusLabel.setText("Error: " + ex.getMessage());
-                    ex.printStackTrace();
+                    LOG.log(Level.SEVERE, "Update failed", ex);
                 } finally {
                     updateButton.setEnabled(true);
                 }

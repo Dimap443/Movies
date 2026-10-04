@@ -70,6 +70,12 @@ public class FilterAndJoinTsv extends JFrame {
                     default -> String.class;
                 };
             }
+
+            // Read-only: Integer/Double columns would otherwise pick up Swing's Number editor
+            @Override
+            public boolean isCellEditable(int row, int column) {
+                return false;
+            }
         };
         // GUI components
         JTable table = new JTable(tableModel);
@@ -253,6 +259,7 @@ public class FilterAndJoinTsv extends JFrame {
         }
     }
 
+
     // Step 1: first file filter – column 2 contains "movie"
     private static Map<String, String[]> filterFirstFile() throws IOException {
         Map<String, String[]> data = new HashMap<>();
@@ -362,7 +369,7 @@ public class FilterAndJoinTsv extends JFrame {
 
                 // ... ratings data appended later ...
 
-                if (cols.length >= 5) {  // Ensure we have enough columns
+                if (cols.length > 5) {  // Ensure we have enough columns (cols[5] is read below)
                     String IMDB_ID = cols[0]; //
                     String title = cols[2];        // primaryTitle
                     Integer year = parseIntOrNull(cols[5]);                        // Year

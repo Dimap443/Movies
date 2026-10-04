@@ -12,6 +12,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.net.URI;
+import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -20,8 +21,14 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.TreeSet;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.regex.Pattern;
@@ -40,6 +47,16 @@ public class FilterAndJoinTsv extends JFrame {
     private static final String SECOND_FILE = "second.tsv";
     private static final String MERGED_FILE = "merged.tsv";
 
+    // Country of origin comes from Wikidata (P495), matched on the IMDb ID (P345)
+    private static final String WIKIDATA_SPARQL_URL = "https://query.wikidata.org/sparql";
+    private static final String WIKIDATA_USER_AGENT = "Movies2/1.0 (https://github.com/Dimap443/Movies)";
+    private static final int WIKIDATA_BATCH_SIZE = 2000;
+
+    // IMDb's marker for a missing value
+    private static final String MISSING = "\\N";
+
+    private static final int COUNTRY_COLUMN = 6;
+
     // Thresholds for second file
     private static final double SECOND_COL2_THRESHOLD = 6.8;
     private static final double SECOND_COL3_THRESHOLD = 999.0;
@@ -52,6 +69,7 @@ public class FilterAndJoinTsv extends JFrame {
     private final DefaultTableModel tableModel;
     private final TableRowSorter<DefaultTableModel> sorter;
     private final JTextField filterField;
+    private final JComboBox<String> hideCountryBox;
     private final JButton updateButton;
     private final JLabel statusLabel;
 
@@ -59,7 +77,7 @@ public class FilterAndJoinTsv extends JFrame {
         super("Movie Data Updater");
 
         // Table model: Movie title, year, genre, rating, viewers
-        String[] columnNames = {"ID", "Title", "Year", "Genre", "Rating", "Voted"};  // Added
+        String[] columnNames = {"ID", "Title", "Year", "Genre", "Rating", "Voted", "Country"};
         tableModel = new DefaultTableModel(columnNames, 0) {
             // Report numeric types so the sorter compares numbers, not strings ("10000" < "9999")
             @Override
@@ -128,6 +146,10 @@ public class FilterAndJoinTsv extends JFrame {
         JButton filterButton = new JButton("Apply filter");
         filterButton.addActionListener(_ -> applyFilter());
 
+        // Hide movies from one country (choices are filled in from the loaded data)
+        hideCountryBox = new JComboBox<>(new String[]{""});
+        hideCountryBox.addActionListener(_ -> applyFilter());
+
         // Update button
         updateButton = new JButton("Update");
         updateButton.addActionListener(this::runUpdate);
@@ -139,6 +161,8 @@ public class FilterAndJoinTsv extends JFrame {
         topPanel.add(new JLabel("Filter:"));
         topPanel.add(filterField);
         topPanel.add(filterButton);
+        topPanel.add(new JLabel("Hide country:"));
+        topPanel.add(hideCountryBox);
 
         JPanel bottomPanel = new JPanel(new BorderLayout());
         bottomPanel.add(statusLabel, BorderLayout.WEST);
@@ -178,22 +202,55 @@ public class FilterAndJoinTsv extends JFrame {
     }
 
     private void applyFilter() {
+        List<RowFilter<DefaultTableModel, Integer>> filters = new ArrayList<>();
+
         String text = filterField.getText();
-        if (text == null || text.isEmpty()) {
-            sorter.setRowFilter(null);
-        } else {
+        if (text != null && !text.isEmpty()) {
             // Quote the input so characters like ( [ * + are matched literally instead of as regex syntax
-            sorter.setRowFilter(RowFilter.regexFilter("(?i)" + Pattern.quote(text)));  // case‑insensitive
+            filters.add(RowFilter.regexFilter("(?i)" + Pattern.quote(text)));  // case‑insensitive
         }
+
+        String hiddenCountry = (String) hideCountryBox.getSelectedItem();
+        if (hiddenCountry != null && !hiddenCountry.isEmpty()) {
+            // Co-productions list several countries ("France,India"); hide the movie if any of them matches
+            filters.add(new RowFilter<>() {
+                @Override
+                public boolean include(Entry<? extends DefaultTableModel, ? extends Integer> entry) {
+                    String countries = entry.getStringValue(COUNTRY_COLUMN);
+                    return !Arrays.asList(countries.split(",")).contains(hiddenCountry);
+                }
+            });
+        }
+
+        sorter.setRowFilter(filters.isEmpty() ? null : RowFilter.andFilter(filters));
+    }
+
+    // Rebuild the "Hide country" choices from the table, keeping the current selection if still present
+    private void refreshCountryChoices() {
+        Set<String> countries = new TreeSet<>();
+        for (int row = 0; row < tableModel.getRowCount(); row++) {
+            String value = (String) tableModel.getValueAt(row, COUNTRY_COLUMN);
+            if (value != null && !value.isEmpty()) {
+                countries.addAll(Arrays.asList(value.split(",")));
+            }
+        }
+
+        Object selected = hideCountryBox.getSelectedItem();
+        DefaultComboBoxModel<String> choices = new DefaultComboBoxModel<>();
+        choices.addElement("");
+        countries.forEach(choices::addElement);
+        hideCountryBox.setModel(choices);
+        hideCountryBox.setSelectedItem(countries.contains(selected) ? selected : "");
     }
 
     private void runUpdate(ActionEvent evt) {
         updateButton.setEnabled(false);
         statusLabel.setText("Updating...");
 
-        SwingWorker<Void, Void> worker = new SwingWorker<>() {  // avoid blocking EDT [web:97][web:94]
+        // Result: true if the Wikidata country lookup succeeded
+        SwingWorker<Boolean, Void> worker = new SwingWorker<>() {  // avoid blocking EDT [web:97][web:94]
             @Override
-            protected Void doInBackground() throws Exception {
+            protected Boolean doInBackground() throws Exception {
                 // Step 0: download and decompress
                 downloadAndDecompress(FIRST_GZ_URL, FIRST_FILE);
                 downloadAndDecompress(SECOND_GZ_URL, SECOND_FILE);
@@ -202,18 +259,33 @@ public class FilterAndJoinTsv extends JFrame {
                 Map<String, String[]> firstFiltered = filterFirstFile();
                 Map<String, String[]> secondFiltered = filterSecondFile();
 
-                // Steps 3–4: merge and save
-                mergeAndSave(firstFiltered, secondFiltered);
+                // Step 2b: country of origin, only for titles that survive the join.
+                // Not fatal: if Wikidata is unavailable the Country column is left blank.
+                Set<String> joinedKeys = new HashSet<>(firstFiltered.keySet());
+                joinedKeys.retainAll(secondFiltered.keySet());
+                Map<String, String> countries = new HashMap<>();
+                boolean countriesLoaded = true;
+                try {
+                    countries = fetchCountries(joinedKeys);
+                } catch (IOException e) {
+                    countriesLoaded = false;
+                    LOG.log(Level.WARNING, "Country lookup failed", e);
+                }
 
-                return null;
+                // Steps 3–4: merge and save
+                mergeAndSave(firstFiltered, secondFiltered, countries);
+
+                return countriesLoaded;
             }
 
             @Override
             protected void done() {
                 try {
-                    get(); // rethrow exceptions
+                    boolean countriesLoaded = get(); // rethrow exceptions
                     loadMergedFileIntoTable();
-                    statusLabel.setText("Update complete");
+                    statusLabel.setText(countriesLoaded
+                            ? "Update complete"
+                            : "Update complete (country lookup failed - see log)");
                 } catch (Exception ex) {
                     statusLabel.setText("Error: " + ex.getMessage());
                     LOG.log(Level.SEVERE, "Update failed", ex);
@@ -247,7 +319,7 @@ public class FilterAndJoinTsv extends JFrame {
              BufferedReader reader = new BufferedReader(new InputStreamReader(gzip, StandardCharsets.UTF_8));
              BufferedWriter writer = Files.newBufferedWriter(outputPath, StandardCharsets.UTF_8)) {
 
-            // Decode via a Reader so multi-byte UTF-8 characters are never split across buffer boundaries
+            // Decode via a Reader so multibyte UTF-8 characters are never split across buffer boundaries
             String line;
             while ((line = reader.readLine()) != null) {
                 line = line.trim();
@@ -314,9 +386,71 @@ public class FilterAndJoinTsv extends JFrame {
         return data;
     }
 
+    // Step 2b: country of origin from Wikidata, queried in batches of IMDb IDs.
+    // Result per key: comma-separated English country names ("France,Poland"); keys Wikidata
+    // doesn't know are absent.
+    private static Map<String, String> fetchCountries(Set<String> keys)
+            throws IOException, InterruptedException {
+        Map<String, Set<String>> countries = new HashMap<>();
+        List<String> ids = new ArrayList<>(keys);
+
+        HttpClient client = HttpClient.newBuilder()
+                .connectTimeout(Duration.ofSeconds(30))
+                .build();
+
+        for (int start = 0; start < ids.size(); start += WIKIDATA_BATCH_SIZE) {
+            StringBuilder values = new StringBuilder();
+            for (String id : ids.subList(start, Math.min(start + WIKIDATA_BATCH_SIZE, ids.size()))) {
+                values.append('"').append(id).append("\" ");
+            }
+            String query = "SELECT ?imdb ?countryLabel WHERE { VALUES ?imdb { " + values + "} "
+                    + "?film wdt:P345 ?imdb ; wdt:P495 ?country . "
+                    + "?country rdfs:label ?countryLabel . FILTER(LANG(?countryLabel) = \"en\") }";
+
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(WIKIDATA_SPARQL_URL))
+                    .timeout(Duration.ofMinutes(2))
+                    .header("Accept", "text/tab-separated-values")
+                    .header("Content-Type", "application/x-www-form-urlencoded")
+                    .header("User-Agent", WIKIDATA_USER_AGENT)  // required by Wikidata's usage policy
+                    .POST(HttpRequest.BodyPublishers.ofString(
+                            "query=" + URLEncoder.encode(query, StandardCharsets.UTF_8)))
+                    .build();
+
+            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+            if (response.statusCode() != 200) {
+                throw new IOException("Wikidata query failed: HTTP " + response.statusCode());
+            }
+
+            // Rows look like: "tt0211718"<TAB>"Japan"@en ; the first line is the header
+            response.body().lines().skip(1).forEach(line -> {
+                String[] columns = line.split("\t", -1);
+                if (columns.length >= 2) {
+                    countries.computeIfAbsent(parseSparqlLiteral(columns[0]), _ -> new TreeSet<>())
+                            .add(parseSparqlLiteral(columns[1]));
+                }
+            });
+        }
+
+        Map<String, String> data = new HashMap<>();
+        countries.forEach((id, names) -> data.put(id, String.join(",", names)));
+        return data;
+    }
+
+    // Turns a SPARQL TSV literal like "Japan"@en into Japan
+    private static String parseSparqlLiteral(String value) {
+        int first = value.indexOf('"');
+        int last = value.lastIndexOf('"');
+        if (first < 0 || last <= first) {
+            return value;
+        }
+        return value.substring(first + 1, last).replace("\\\"", "\"").replace("\\\\", "\\");
+    }
+
     // Steps 3–4: merge and save
     private static void mergeAndSave(Map<String, String[]> firstData,
-                                     Map<String, String[]> secondData) throws IOException {
+                                     Map<String, String[]> secondData,
+                                     Map<String, String> countries) throws IOException {
         Path outputPath = Paths.get(FilterAndJoinTsv.MERGED_FILE);
 
         try (BufferedWriter writer = Files.newBufferedWriter(outputPath, StandardCharsets.UTF_8)) {
@@ -335,6 +469,7 @@ public class FilterAndJoinTsv extends JFrame {
                     for (int i = 1; i < secondCols.length; i++) {
                         sb.append('\t').append(secondCols[i]);
                     }
+                    sb.append('\t').append(countries.getOrDefault(key, MISSING));  // country
 
                     writer.write(sb.toString());
                     writer.newLine();
@@ -376,11 +511,17 @@ public class FilterAndJoinTsv extends JFrame {
                     String genre = cols.length > 8 ? cols[8] : "";                 // Genre
                     Double rating = cols.length > 9 ? parseDoubleOrNull(cols[9]) : null;   // Rating
                     Integer voted = cols.length > 10 ? parseIntOrNull(cols[10]) : null;    // Voted
+                    String country = cols.length > 11 ? blankIfMissing(cols[11]) : "";   // Country
 
-                    tableModel.addRow(new Object[]{IMDB_ID, title, year, genre, rating, voted});
+                    tableModel.addRow(new Object[]{IMDB_ID, title, year, genre, rating, voted, country});
                 }
             }
         }
+        refreshCountryChoices();
+    }
+
+    private static String blankIfMissing(String value) {
+        return MISSING.equals(value) ? "" : value;
     }
 
     // IMDb uses "\N" for missing values; those become null (empty cell, sorted first)

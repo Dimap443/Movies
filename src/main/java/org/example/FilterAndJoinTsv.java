@@ -1,6 +1,7 @@
 package org.example;
 import javax.swing.*;
 import javax.swing.table.DefaultTableModel;
+import javax.swing.table.TableCellRenderer;
 import javax.swing.table.TableRowSorter;
 import javax.swing.RowFilter;
 import java.awt.*;
@@ -102,6 +103,9 @@ public class FilterAndJoinTsv extends JFrame {
 
     private static final Logger LOG = Logger.getLogger(FilterAndJoinTsv.class.getName());
 
+    private static final Color NEW_MOVIE_COLOR = new Color(200, 255, 200);
+
+    private final Set<String> newMovieIds = new HashSet<>();  // IMDb ids added by the last update
     private final DefaultTableModel tableModel;
     private final TableRowSorter<DefaultTableModel> sorter;
     private final JTextField filterField;
@@ -132,7 +136,18 @@ public class FilterAndJoinTsv extends JFrame {
             }
         };
         // GUI components
-        JTable table = new JTable(tableModel);
+        JTable table = new JTable(tableModel) {
+            // Tint rows for movies added by the last update
+            @Override
+            public Component prepareRenderer(TableCellRenderer renderer, int row, int column) {
+                Component c = super.prepareRenderer(renderer, row, column);
+                if (!isRowSelected(row)) {
+                    String id = (String) tableModel.getValueAt(convertRowIndexToModel(row), 0);
+                    c.setBackground(newMovieIds.contains(id) ? NEW_MOVIE_COLOR : getBackground());
+                }
+                return c;
+            }
+        };
 
         sorter = new TableRowSorter<>(tableModel);
         table.setRowSorter(sorter);  // enable sorting and filtering [web:92][web:90][web:91]
@@ -338,10 +353,28 @@ public class FilterAndJoinTsv extends JFrame {
             protected void done() {
                 try {
                     boolean countriesLoaded = get(); // rethrow exceptions
+                    Set<String> previousIds = new HashSet<>();
+                    for (int row = 0; row < tableModel.getRowCount(); row++) {
+                        previousIds.add((String) tableModel.getValueAt(row, 0));
+                    }
                     loadMergedFileIntoTable();
-                    statusLabel.setText(countriesLoaded
+
+                    // Highlight what's new; with an empty table before the update everything would be "new"
+                    newMovieIds.clear();
+                    if (!previousIds.isEmpty()) {
+                        for (int row = 0; row < tableModel.getRowCount(); row++) {
+                            String id = (String) tableModel.getValueAt(row, 0);
+                            if (!previousIds.contains(id)) {
+                                newMovieIds.add(id);
+                            }
+                        }
+                    }
+                    tableModel.fireTableDataChanged();  // repaint with the highlights
+
+                    statusLabel.setText((countriesLoaded
                             ? "Update complete"
-                            : "Update complete (country lookup incomplete - see log)");
+                            : "Update complete (country lookup incomplete - see log)")
+                            + " - " + newMovieIds.size() + " new movies highlighted");
                 } catch (Exception ex) {
                     statusLabel.setText("Error: " + ex.getMessage());
                     LOG.log(Level.SEVERE, "Update failed", ex);

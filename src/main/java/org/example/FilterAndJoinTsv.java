@@ -107,6 +107,7 @@ public class FilterAndJoinTsv extends JFrame {
 
     private final Set<String> newMovieIds = new HashSet<>();  // IMDb ids added by the last update
     private final DefaultTableModel tableModel;
+    private final JTable table;
     private final TableRowSorter<DefaultTableModel> sorter;
     private final JTextField filterField;
     private final JComboBox<String> hideCountryBox;
@@ -136,7 +137,7 @@ public class FilterAndJoinTsv extends JFrame {
             }
         };
         // GUI components
-        JTable table = new JTable(tableModel) {
+        table = new JTable(tableModel) {
             // Tint rows for movies added by the last update
             @Override
             public Component prepareRenderer(TableCellRenderer renderer, int row, int column) {
@@ -369,6 +370,16 @@ public class FilterAndJoinTsv extends JFrame {
                             }
                         }
                     }
+
+                    // Move the new movies to the top and drop any column sort so they stay there
+                    int top = 0;
+                    for (int row = 0; row < tableModel.getRowCount(); row++) {
+                        if (newMovieIds.contains((String) tableModel.getValueAt(row, 0))) {
+                            tableModel.moveRow(row, row, top++);
+                        }
+                    }
+                    sorter.setSortKeys(null);
+                    table.scrollRectToVisible(table.getCellRect(0, 0, true));
                     tableModel.fireTableDataChanged();  // repaint with the highlights
 
                     statusLabel.setText((countriesLoaded

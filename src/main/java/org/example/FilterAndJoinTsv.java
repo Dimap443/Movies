@@ -495,6 +495,7 @@ public class FilterAndJoinTsv extends JFrame {
         List<String> ids = new ArrayList<>(keys);
 
         HttpClient client = HttpClient.newBuilder()
+                .version(HttpClient.Version.HTTP_1_1)  // avoids HTTP/2 stream resets from Wikidata's proxy
                 .connectTimeout(Duration.ofSeconds(30))
                 .build();
 
@@ -517,7 +518,7 @@ public class FilterAndJoinTsv extends JFrame {
                             "query=" + URLEncoder.encode(query, StandardCharsets.UTF_8)))
                     .build();
 
-            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+            HttpResponse<String> response = sendWithRetry(client, request);
             if (response.statusCode() != 200) {
                 throw new IOException("Wikidata query failed: HTTP " + response.statusCode());
             }
@@ -535,6 +536,34 @@ public class FilterAndJoinTsv extends JFrame {
         Map<String, String> data = new HashMap<>();
         countries.forEach((id, names) -> data.put(id, String.join(",", names)));
         return data;
+    }
+
+    // Wikidata often answers 429/5xx under load; retry those with growing delays.
+    // The sleep is a deliberate backoff between attempts, not busy-waiting.
+    @SuppressWarnings("BusyWait")
+    private static HttpResponse<String> sendWithRetry(HttpClient client, HttpRequest request)
+            throws IOException, InterruptedException {
+        int attempt = 1;
+        while (true) {
+            String failure;
+            try {
+                HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+                int status = response.statusCode();
+                if ((status != 429 && status < 500) || attempt == 5) {
+                    return response;
+                }
+                failure = "HTTP " + status;
+            } catch (IOException e) {
+                // e.g. the server resetting the stream mid-response
+                if (attempt == 5) {
+                    throw e;
+                }
+                failure = e.toString();
+            }
+            LOG.warning("Wikidata " + failure + ", retrying (attempt " + attempt + ")");
+            Thread.sleep(2000L * attempt * attempt);
+            attempt++;
+        }
     }
 
     // Turns a SPARQL TSV literal like "Japan"@en into Japan

@@ -103,6 +103,19 @@ public class FilterAndJoinTsv extends JFrame {
 
     private static final Logger LOG = Logger.getLogger(FilterAndJoinTsv.class.getName());
 
+    // Progress messages go to standard output (java.util.logging's console handler uses stderr)
+    private static void log(String message) {
+        System.out.println(java.time.LocalTime.now().withNano(0) + " " + message);
+    }
+
+    private static void logStart(String action) {
+        log("START " + action);
+    }
+
+    private static void logEnd(String action) {
+        log("END   " + action);
+    }
+
     private static final Color NEW_MOVIE_COLOR = new Color(200, 255, 200);
 
     private final Set<String> newMovieIds = new HashSet<>();  // IMDb ids added by the last update
@@ -242,9 +255,12 @@ public class FilterAndJoinTsv extends JFrame {
         Path mergedPath = Paths.get(MERGED_FILE);
         if (Files.exists(mergedPath) && Files.size(mergedPath) > 0) {
             try {
+                logStart("Load existing " + MERGED_FILE);
                 loadMergedFileIntoTable();
+                logEnd("Load existing " + MERGED_FILE + " (" + tableModel.getRowCount() + " rows)");
                 statusLabel.setText("Loaded existing data from " + MERGED_FILE);
             } catch (IOException e) {
+                log("Load existing " + MERGED_FILE + " FAILED: " + e.getMessage());
                 statusLabel.setText("Error loading existing data: " + e.getMessage());
                 LOG.log(Level.SEVERE, "Failed to load " + MERGED_FILE, e);
             }
@@ -310,25 +326,41 @@ public class FilterAndJoinTsv extends JFrame {
         SwingWorker<Boolean, Void> worker = new SwingWorker<>() {  // avoid blocking EDT [web:97][web:94]
             @Override
             protected Boolean doInBackground() throws Exception {
+                logStart("Update");
+
                 // Step 0: download and decompress
+                logStart("Download " + FIRST_GZ_URL);
                 downloadAndDecompress(FIRST_GZ_URL, FIRST_FILE);
+                logEnd("Download " + FIRST_GZ_URL);
+                logStart("Download " + SECOND_GZ_URL);
                 downloadAndDecompress(SECOND_GZ_URL, SECOND_FILE);
+                logEnd("Download " + SECOND_GZ_URL);
 
                 // Steps 1–2: filter
+                logStart("Filter " + FIRST_FILE);
                 Map<String, String[]> firstFiltered = filterFirstFile();
+                logEnd("Filter " + FIRST_FILE + " (" + firstFiltered.size() + " rows kept)");
+                logStart("Filter " + SECOND_FILE);
                 Map<String, String[]> secondFiltered = filterSecondFile();
+                logEnd("Filter " + SECOND_FILE + " (" + secondFiltered.size() + " rows kept)");
 
                 // Step 2b: country of origin, only for titles that survive the join: Wikidata first,
                 // then TMDb for the titles Wikidata doesn't know.
                 // Not fatal: if a source is unavailable its titles are left blank.
                 Set<String> joinedKeys = new HashSet<>(firstFiltered.keySet());
                 joinedKeys.retainAll(secondFiltered.keySet());
-                Map<String, String> countries = new HashMap<>();
+                // Countries already in the previous merged.tsv are kept; only the rest are looked up.
+                Map<String, String> countries = loadKnownCountries();
+                joinedKeys.removeAll(countries.keySet());
                 boolean countriesLoaded = true;
+                logStart("Wikidata country lookup (" + joinedKeys.size() + " titles)");
                 try {
-                    countries.putAll(fetchWikidataCountries(joinedKeys));
+                    Map<String, String> wikidataCountries = fetchWikidataCountries(joinedKeys);
+                    countries.putAll(wikidataCountries);
+                    logEnd("Wikidata country lookup (" + wikidataCountries.size() + " found)");
                 } catch (IOException e) {
                     countriesLoaded = false;
+                    logEnd("Wikidata country lookup FAILED: " + e.getMessage());
                     LOG.log(Level.WARNING, "Wikidata country lookup failed", e);
                 }
 
@@ -336,16 +368,25 @@ public class FilterAndJoinTsv extends JFrame {
                 if (tmdbToken != null) {
                     Set<String> missing = new HashSet<>(joinedKeys);
                     missing.removeAll(countries.keySet());
+                    logStart("TMDb country lookup (" + missing.size() + " titles)");
                     try {
-                        countries.putAll(fetchTmdbCountries(missing, tmdbToken));
+                        Map<String, String> tmdbCountries = fetchTmdbCountries(missing, tmdbToken);
+                        countries.putAll(tmdbCountries);
+                        logEnd("TMDb country lookup (" + tmdbCountries.size() + " found)");
                     } catch (IOException e) {
                         countriesLoaded = false;
+                        logEnd("TMDb country lookup FAILED: " + e.getMessage());
                         LOG.log(Level.WARNING, "TMDb country lookup failed", e);
                     }
+                } else {
+                    log("TMDb country lookup skipped (no token)");
                 }
 
                 // Steps 3–4: merge and save
+                logStart("Merge and save " + MERGED_FILE);
                 mergeAndSave(firstFiltered, secondFiltered, countries);
+                logEnd("Merge and save " + MERGED_FILE);
+                logEnd("Update");
 
                 return countriesLoaded;
             }
@@ -358,7 +399,9 @@ public class FilterAndJoinTsv extends JFrame {
                     for (int row = 0; row < tableModel.getRowCount(); row++) {
                         previousIds.add((String) tableModel.getValueAt(row, 0));
                     }
+                    logStart("Load " + MERGED_FILE + " into table");
                     loadMergedFileIntoTable();
+                    logEnd("Load " + MERGED_FILE + " into table (" + tableModel.getRowCount() + " rows)");
 
                     // Highlight what's new; with an empty table before the update everything would be "new"
                     newMovieIds.clear();
@@ -388,6 +431,7 @@ public class FilterAndJoinTsv extends JFrame {
                             + " - " + newMovieIds.size() + " new movies highlighted");
                 } catch (Exception ex) {
                     statusLabel.setText("Error: " + ex.getMessage());
+                    log("Update FAILED: " + ex.getMessage());
                     LOG.log(Level.SEVERE, "Update failed", ex);
                 } finally {
                     updateButton.setEnabled(true);
@@ -690,6 +734,27 @@ public class FilterAndJoinTsv extends JFrame {
         String name = Locale.of("", isoCode).getDisplayCountry(Locale.ENGLISH)
                 .replace(" & ", " and ");          // "Trinidad & Tobago"
         return name.startsWith("St. ") ? "Saint " + name.substring(4) : name;  // "St. Lucia"
+    }
+
+    // Countries already known from the previous merged.tsv (IMDb ID -> country); empty if no file yet
+    private static Map<String, String> loadKnownCountries() {
+        Map<String, String> known = new HashMap<>();
+        Path path = Paths.get(MERGED_FILE);
+        if (!Files.exists(path)) {
+            return known;
+        }
+        try (BufferedReader reader = Files.newBufferedReader(path, StandardCharsets.UTF_8)) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                String[] cols = line.split("\t", -1);
+                if (cols.length > 11 && !cols[11].isEmpty() && !MISSING.equals(cols[11])) {
+                    known.put(cols[0], cols[11]);
+                }
+            }
+        } catch (IOException e) {
+            LOG.log(Level.WARNING, "Could not read known countries from " + MERGED_FILE, e);
+        }
+        return known;
     }
 
     // Steps 3–4: merge and save

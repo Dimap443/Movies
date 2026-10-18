@@ -10,7 +10,6 @@ import java.io.BufferedInputStream;
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.IOException;
-import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.net.URI;
 import java.net.URLEncoder;
@@ -21,6 +20,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -29,6 +29,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Properties;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.concurrent.ConcurrentHashMap;
@@ -51,9 +52,13 @@ public class FilterAndJoinTsv extends JFrame {
     // URLs and filenames
     private static final String FIRST_GZ_URL = "https://datasets.imdbws.com/title.basics.tsv.gz";
     private static final String SECOND_GZ_URL = "https://datasets.imdbws.com/title.ratings.tsv.gz";
-    private static final String FIRST_FILE = "first.tsv";
-    private static final String SECOND_FILE = "second.tsv";
+    // The downloads are kept compressed and read directly, so an unchanged file needs no re-download
+    private static final String FIRST_GZ_FILE = "title.basics.tsv.gz";
+    private static final String SECOND_GZ_FILE = "title.ratings.tsv.gz";
     private static final String MERGED_FILE = "merged.tsv";
+    // Per downloaded file: the server's ETag and Last-Modified (sent back so an unchanged file
+    // answers 304 with no body), and the version merged.tsv was last completely built from
+    private static final String DOWNLOAD_STATE_FILE = "downloads.properties";
 
     // Country of origin comes from Wikidata (P495), matched on the IMDb ID (P345)
     private static final String WIKIDATA_SPARQL_URL = "https://query.wikidata.org/sparql";
@@ -322,27 +327,37 @@ public class FilterAndJoinTsv extends JFrame {
         updateButton.setEnabled(false);
         statusLabel.setText("Updating...");
 
-        // Result: true if the Wikidata country lookup succeeded
-        SwingWorker<Boolean, Void> worker = new SwingWorker<>() {  // avoid blocking EDT [web:97][web:94]
-            @Override
-            protected Boolean doInBackground() throws Exception {
-                logStart("Update");
+        SwingWorker<UpdateResult, Void> worker = new SwingWorker<>() {  // avoid blocking EDT [web:97][web:94]
+            private String unchangedSince;  // IMDb's Last-Modified, when the result is UNCHANGED
 
-                // Step 0: download and decompress
+            @Override
+            protected UpdateResult doInBackground() throws Exception {
+                logStart("Update");
+                Properties state = loadDownloadState();
+
+                // Step 0: download whichever files IMDb has regenerated since the last update
                 logStart("Download " + FIRST_GZ_URL);
-                downloadAndDecompress(FIRST_GZ_URL, FIRST_FILE);
-                logEnd("Download " + FIRST_GZ_URL);
+                boolean firstChanged = downloadIfChanged(FIRST_GZ_URL, FIRST_GZ_FILE, state);
+                logEnd("Download " + FIRST_GZ_URL + (firstChanged ? "" : " (unchanged, skipped)"));
                 logStart("Download " + SECOND_GZ_URL);
-                downloadAndDecompress(SECOND_GZ_URL, SECOND_FILE);
-                logEnd("Download " + SECOND_GZ_URL);
+                boolean secondChanged = downloadIfChanged(SECOND_GZ_URL, SECOND_GZ_FILE, state);
+                logEnd("Download " + SECOND_GZ_URL + (secondChanged ? "" : " (unchanged, skipped)"));
+                saveDownloadState(state);
+
+                // Nothing to redo if merged.tsv was already completely built from these exact files
+                if (isMergedUpToDate(state)) {
+                    unchangedSince = state.getProperty(FIRST_GZ_FILE + ".lastModified", "the last update");
+                    logEnd("Update (IMDb data unchanged since " + unchangedSince + ")");
+                    return UpdateResult.UNCHANGED;
+                }
 
                 // Steps 1–2: filter
-                logStart("Filter " + FIRST_FILE);
+                logStart("Filter " + FIRST_GZ_FILE);
                 Map<String, String[]> firstFiltered = filterFirstFile();
-                logEnd("Filter " + FIRST_FILE + " (" + firstFiltered.size() + " rows kept)");
-                logStart("Filter " + SECOND_FILE);
+                logEnd("Filter " + FIRST_GZ_FILE + " (" + firstFiltered.size() + " rows kept)");
+                logStart("Filter " + SECOND_GZ_FILE);
                 Map<String, String[]> secondFiltered = filterSecondFile();
-                logEnd("Filter " + SECOND_FILE + " (" + secondFiltered.size() + " rows kept)");
+                logEnd("Filter " + SECOND_GZ_FILE + " (" + secondFiltered.size() + " rows kept)");
 
                 // Step 2b: country of origin, only for titles that survive the join: Wikidata first,
                 // then TMDb for the titles Wikidata doesn't know.
@@ -386,15 +401,29 @@ public class FilterAndJoinTsv extends JFrame {
                 logStart("Merge and save " + MERGED_FILE);
                 mergeAndSave(firstFiltered, secondFiltered, countries);
                 logEnd("Merge and save " + MERGED_FILE);
+
+                // Only a complete build counts: after a failed country lookup the next Update
+                // reprocesses (and retries the lookup) even if IMDb hasn't changed
+                if (countriesLoaded) {
+                    for (String file : List.of(FIRST_GZ_FILE, SECOND_GZ_FILE)) {
+                        state.setProperty(file + ".merged", fileVersion(state, file));
+                    }
+                    saveDownloadState(state);
+                }
                 logEnd("Update");
 
-                return countriesLoaded;
+                return countriesLoaded ? UpdateResult.COMPLETE : UpdateResult.COUNTRIES_INCOMPLETE;
             }
 
             @Override
             protected void done() {
                 try {
-                    boolean countriesLoaded = get(); // rethrow exceptions
+                    UpdateResult result = get(); // rethrow exceptions
+                    if (result == UpdateResult.UNCHANGED) {
+                        // Table and highlights stay as they are
+                        statusLabel.setText("IMDb data unchanged since " + unchangedSince + " - nothing to update");
+                        return;
+                    }
                     Set<String> previousIds = new HashSet<>();
                     for (int row = 0; row < tableModel.getRowCount(); row++) {
                         previousIds.add((String) tableModel.getValueAt(row, 0));
@@ -425,7 +454,7 @@ public class FilterAndJoinTsv extends JFrame {
                     table.scrollRectToVisible(table.getCellRect(0, 0, true));
                     tableModel.fireTableDataChanged();  // repaint with the highlights
 
-                    statusLabel.setText((countriesLoaded
+                    statusLabel.setText((result == UpdateResult.COMPLETE
                             ? "Update complete"
                             : "Update complete (country lookup incomplete - see log)")
                             + " - " + newMovieIds.size() + " new movies highlighted");
@@ -444,44 +473,104 @@ public class FilterAndJoinTsv extends JFrame {
 
     // -- Existing logic below (slightly adapted to throw InterruptedException) ---
 
-    private static void downloadAndDecompress(String gzUrl, String outputFile)
+    private enum UpdateResult { UNCHANGED, COMPLETE, COUNTRIES_INCOMPLETE }
+
+    // Download gzUrl to outputFile unless the copy on disk is still current: the ETag and
+    // Last-Modified saved in state are sent back, and the server answers 304 (no body) if the
+    // file hasn't changed. Returns true if a new copy was downloaded.
+    private static boolean downloadIfChanged(String gzUrl, String outputFile, Properties state)
             throws IOException, InterruptedException {
         Path outputPath = Paths.get(outputFile);
+        Path partPath = Paths.get(outputFile + ".part");  // never leave a half-written file in place
 
         HttpClient client = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(30))
                 .build();  // modern HTTP client [web:62][web:81]
 
-        HttpRequest request = HttpRequest.newBuilder()
+        HttpRequest.Builder request = HttpRequest.newBuilder()
                 .uri(URI.create(gzUrl))
-                .timeout(Duration.ofMinutes(5))
-                .build();
-
-        try (InputStream in = client.send(request, HttpResponse.BodyHandlers.ofInputStream()).body();
-             BufferedInputStream bis = new BufferedInputStream(in);
-             GZIPInputStream gzip = new GZIPInputStream(bis);
-             BufferedReader reader = new BufferedReader(new InputStreamReader(gzip, StandardCharsets.UTF_8));
-             BufferedWriter writer = Files.newBufferedWriter(outputPath, StandardCharsets.UTF_8)) {
-
-            // Decode via a Reader so multibyte UTF-8 characters are never split across buffer boundaries
-            String line;
-            while ((line = reader.readLine()) != null) {
-                line = line.trim();
-                if (!line.isEmpty()) {
-                    writer.write(line);
-                    writer.newLine();
-                }
+                .timeout(Duration.ofMinutes(5));
+        if (Files.exists(outputPath)) {
+            String etag = state.getProperty(outputFile + ".etag");
+            String lastModified = state.getProperty(outputFile + ".lastModified");
+            if (etag != null) {
+                request.header("If-None-Match", etag);
+            }
+            if (lastModified != null) {
+                request.header("If-Modified-Since", lastModified);
             }
         }
+
+        try {
+            HttpResponse<Path> response = client.send(request.build(), HttpResponse.BodyHandlers.ofFile(partPath));
+            if (response.statusCode() == 304) {
+                return false;
+            }
+            if (response.statusCode() != 200) {
+                throw new IOException("HTTP " + response.statusCode() + " downloading " + gzUrl);
+            }
+            Files.move(partPath, outputPath, StandardCopyOption.REPLACE_EXISTING);
+
+            for (String header : List.of("ETag", "Last-Modified")) {
+                String key = outputFile + (header.equals("ETag") ? ".etag" : ".lastModified");
+                response.headers().firstValue(header).ifPresentOrElse(
+                        value -> state.setProperty(key, value), () -> state.remove(key));
+            }
+            return true;
+        } finally {
+            Files.deleteIfExists(partPath);
+        }
+    }
+
+    // What identifies a downloaded file's version: its ETag, else its Last-Modified (null if neither)
+    private static String fileVersion(Properties state, String file) {
+        return state.getProperty(file + ".etag", state.getProperty(file + ".lastModified"));
+    }
+
+    // True if merged.tsv was completely built from the downloaded files now on disk
+    private static boolean isMergedUpToDate(Properties state) {
+        if (!Files.exists(Paths.get(MERGED_FILE))) {
+            return false;
+        }
+        for (String file : List.of(FIRST_GZ_FILE, SECOND_GZ_FILE)) {
+            String version = fileVersion(state, file);
+            if (version == null || !version.equals(state.getProperty(file + ".merged"))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static Properties loadDownloadState() throws IOException {
+        Properties state = new Properties();
+        Path path = Paths.get(DOWNLOAD_STATE_FILE);
+        if (Files.exists(path)) {
+            try (BufferedReader reader = Files.newBufferedReader(path, StandardCharsets.UTF_8)) {
+                state.load(reader);
+            }
+        }
+        return state;
+    }
+
+    private static void saveDownloadState(Properties state) throws IOException {
+        try (BufferedWriter writer = Files.newBufferedWriter(Paths.get(DOWNLOAD_STATE_FILE), StandardCharsets.UTF_8)) {
+            state.store(writer, "IMDb download versions - written by FilterAndJoinTsv");
+        }
+    }
+
+    // Read a downloaded .gz file as text. Decoding via a Reader means multibyte UTF-8 characters
+    // are never split across buffer boundaries.
+    private static BufferedReader openGzip(String file) throws IOException {
+        return new BufferedReader(new InputStreamReader(
+                new GZIPInputStream(new BufferedInputStream(Files.newInputStream(Paths.get(file))), 65536),
+                StandardCharsets.UTF_8));
     }
 
 
     // Step 1: first file filter – column 2 contains "movie"
     private static Map<String, String[]> filterFirstFile() throws IOException {
         Map<String, String[]> data = new HashMap<>();
-        Path path = Paths.get(FilterAndJoinTsv.FIRST_FILE);
-
-        try (BufferedReader reader = Files.newBufferedReader(path, StandardCharsets.UTF_8)) {
+        try (BufferedReader reader = openGzip(FIRST_GZ_FILE)) {
             String line;
             boolean firstLine = true;
 
@@ -505,9 +594,7 @@ public class FilterAndJoinTsv extends JFrame {
     // Step 2: second file filter – col2 >= 6.8 AND col3 >= 999
     private static Map<String, String[]> filterSecondFile() throws IOException {
         Map<String, String[]> data = new HashMap<>();
-        Path path = Paths.get(FilterAndJoinTsv.SECOND_FILE);
-
-        try (BufferedReader reader = Files.newBufferedReader(path, StandardCharsets.UTF_8)) {
+        try (BufferedReader reader = openGzip(SECOND_GZ_FILE)) {
             String line;
             boolean firstLine = true;
 

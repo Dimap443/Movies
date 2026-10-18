@@ -39,6 +39,9 @@ build/
 .DS_Store
 first.tsv
 second.tsv
+*.tsv.gz
+*.tsv.gz.part
+downloads.properties
 
 ### TMDb API token (local only, never commit)
 tmdb.token

@@ -66,10 +66,10 @@ public class FilterAndJoinTsv extends JFrame {
     private static final int WIKIDATA_BATCH_SIZE = 2000;
 
     // TMDb fills in titles Wikidata doesn't know. The API token is read from the TMDB_API_TOKEN
-    // environment variable or the git-ignored tmdb.token file; without one this step is skipped.
+    // environment variable or the git-ignored tmdb.txt file; without one this step is skipped.
     private static final String TMDB_MOVIE_URL = "https://api.themoviedb.org/3/movie/";  // accepts IMDb IDs
     private static final String TMDB_TOKEN_ENV = "TMDB_API_TOKEN";
-    private static final String TMDB_TOKEN_FILE = "tmdb.token";
+    private static final String TMDB_TOKEN_FILE = "tmdb.txt";
     private static final int TMDB_THREADS = 8;          // stays well under TMDb's ~50 requests/second
     private static final int TMDB_MAX_ATTEMPTS = 4;     // retries for HTTP 429 (rate limited)
     private static final Pattern TMDB_ORIGIN_COUNTRY = Pattern.compile("\"origin_country\":\\[(.*?)]");

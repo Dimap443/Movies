@@ -70,9 +70,9 @@ jobs:
         with:
           ref: master  # includes the merged.tsv the update job just pushed
       - run: cp merged.tsv web/
-      - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v4
+      - uses: actions/configure-pages@v6
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: web
       - id: deploy
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5

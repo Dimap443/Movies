@@ -93,6 +93,21 @@
                             </arguments>
                         </configuration>
                     </execution>
+                    <!-- jpackage copies the launcher read-only, which mvn clean can't delete on Windows -->
+                    <execution>
+                        <id>clear-read-only</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>exec</goal>
+                        </goals>
+                        <configuration>
+                            <executable>attrib</executable>
+                            <arguments>
+                                <argument>-R</argument>
+                                <argument>${project.build.directory}\dist\Movies\Movies.exe</argument>
+                            </arguments>
+                        </configuration>
+                    </execution>
                 </executions>
             </plugin>
         </plugins>

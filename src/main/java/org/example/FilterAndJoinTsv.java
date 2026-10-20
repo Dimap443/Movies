@@ -22,6 +22,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.time.Duration;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -59,6 +60,8 @@ public class FilterAndJoinTsv extends JFrame {
     // Per downloaded file: the server's ETag and Last-Modified (sent back so an unchanged file
     // answers 304 with no body), and the version merged.tsv was last completely built from
     private static final String DOWNLOAD_STATE_FILE = "downloads.properties";
+    // The movies seen so far, so new ones stay highlighted for the rest of the day
+    private static final String SEEN_STATE_FILE = "seen.properties";
     // The packaged .exe (jpackage sets jpackage.app-path) keeps its files in %LOCALAPPDATA%\Movies,
     // since its install folder may not be writable; run from the IDE they stay in the working directory
     private static final Path DATA_DIR = System.getProperty("jpackage.app-path") == null
@@ -128,7 +131,7 @@ public class FilterAndJoinTsv extends JFrame {
 
     private static final Color NEW_MOVIE_COLOR = new Color(200, 255, 200);
 
-    private final Set<String> newMovieIds = new HashSet<>();  // IMDb ids added by the last update
+    private final Set<String> newMovieIds = new HashSet<>();  // IMDb ids not seen before today
     private final DefaultTableModel tableModel;
     private final JTable table;
     private final TableRowSorter<DefaultTableModel> sorter;
@@ -166,7 +169,7 @@ public class FilterAndJoinTsv extends JFrame {
         };
         // GUI components
         table = new JTable(tableModel) {
-            // Tint rows for movies added by the last update
+            // Tint rows for new movies
             @Override
             public Component prepareRenderer(TableCellRenderer renderer, int row, int column) {
                 Component c = super.prepareRenderer(renderer, row, column);
@@ -273,7 +276,9 @@ public class FilterAndJoinTsv extends JFrame {
                 logStart("Load existing " + MERGED_FILE);
                 loadMergedFileIntoTable();
                 logEnd("Load existing " + MERGED_FILE + " (" + tableModel.getRowCount() + " rows)");
-                statusLabel.setText("Loaded existing data from " + MERGED_FILE);
+                markNewMovies();
+                statusLabel.setText("Loaded existing data from " + MERGED_FILE
+                        + (newMovieIds.isEmpty() ? "" : " - " + newMovieIds.size() + " new movies highlighted"));
             } catch (IOException e) {
                 log("Load existing " + MERGED_FILE + " FAILED: " + e.getMessage());
                 statusLabel.setText("Error loading existing data: " + e.getMessage());
@@ -358,35 +363,10 @@ public class FilterAndJoinTsv extends JFrame {
                         statusLabel.setText("IMDb data unchanged since " + unchangedSince + " - nothing to update");
                         return;
                     }
-                    Set<String> previousIds = new HashSet<>();
-                    for (int row = 0; row < tableModel.getRowCount(); row++) {
-                        previousIds.add((String) tableModel.getValueAt(row, 0));
-                    }
                     logStart("Load " + MERGED_FILE + " into table");
                     loadMergedFileIntoTable();
                     logEnd("Load " + MERGED_FILE + " into table (" + tableModel.getRowCount() + " rows)");
-
-                    // Highlight what's new; with an empty table before the update everything would be "new"
-                    newMovieIds.clear();
-                    if (!previousIds.isEmpty()) {
-                        for (int row = 0; row < tableModel.getRowCount(); row++) {
-                            String id = (String) tableModel.getValueAt(row, 0);
-                            if (!previousIds.contains(id)) {
-                                newMovieIds.add(id);
-                            }
-                        }
-                    }
-
-                    // Move the new movies to the top and drop any column sort so they stay there
-                    int top = 0;
-                    for (int row = 0; row < tableModel.getRowCount(); row++) {
-                        if (newMovieIds.contains((String) tableModel.getValueAt(row, 0))) {
-                            tableModel.moveRow(row, row, top++);
-                        }
-                    }
-                    sorter.setSortKeys(null);
-                    table.scrollRectToVisible(table.getCellRect(0, 0, true));
-                    tableModel.fireTableDataChanged();  // repaint with the highlights
+                    markNewMovies();
 
                     statusLabel.setText((result == UpdateResult.COMPLETE
                             ? "Update complete"
@@ -403,6 +383,58 @@ public class FilterAndJoinTsv extends JFrame {
         };
 
         worker.execute();
+    }
+
+    // Like the web page: movies not seen before today's first load are highlighted for the rest of
+    // the day, across restarts too (none the very first time). They are moved to the top, and any
+    // column sort is dropped so they stay there.
+    private void markNewMovies() {
+        List<String> ids = new ArrayList<>();
+        for (int row = 0; row < tableModel.getRowCount(); row++) {
+            ids.add((String) tableModel.getValueAt(row, 0));
+        }
+        newMovieIds.clear();
+        if (ids.isEmpty()) {
+            return;  // an empty merged.tsv must not become the list of seen movies
+        }
+        String current = String.join(" ", ids);
+        String today = LocalDate.now().toString();
+
+        Properties seen = new Properties();
+        try {
+            seen = loadProperties(SEEN_STATE_FILE);
+        } catch (IOException e) {
+            LOG.log(Level.WARNING, "Cannot read " + SEEN_STATE_FILE, e);
+        }
+        String baseline = seen.getProperty("baseIds");
+        if (baseline == null || !today.equals(seen.getProperty("baseDay"))) {
+            baseline = seen.getProperty("seenIds", current);  // the movies as of the last load before today
+            seen.setProperty("baseIds", baseline);
+            seen.setProperty("baseDay", today);
+        }
+        seen.setProperty("seenIds", current);
+        try {
+            saveProperties(SEEN_STATE_FILE, seen, "Movies seen so far - written by FilterAndJoinTsv");
+        } catch (IOException e) {
+            LOG.log(Level.WARNING, "Cannot write " + SEEN_STATE_FILE, e);
+        }
+
+        Set<String> known = new HashSet<>(Arrays.asList(baseline.split(" ")));
+        for (String id : ids) {
+            if (!known.contains(id)) {
+                newMovieIds.add(id);
+            }
+        }
+
+        int top = 0;
+        for (int row = 0; row < tableModel.getRowCount(); row++) {
+            if (newMovieIds.contains((String) tableModel.getValueAt(row, 0))) {
+                tableModel.moveRow(row, row, top++);
+            }
+        }
+        sorter.setSortKeys(null);
+        table.scrollRectToVisible(table.getCellRect(0, 0, true));
+        tableModel.fireTableDataChanged();  // repaint with the highlights
     }
 
     // -- Existing logic below (slightly adapted to throw InterruptedException) ---
@@ -566,19 +598,28 @@ public class FilterAndJoinTsv extends JFrame {
     }
 
     private static Properties loadDownloadState() throws IOException {
-        Properties state = new Properties();
-        Path path = dataFile(DOWNLOAD_STATE_FILE);
-        if (Files.exists(path)) {
-            try (BufferedReader reader = Files.newBufferedReader(path, StandardCharsets.UTF_8)) {
-                state.load(reader);
-            }
-        }
-        return state;
+        return loadProperties(DOWNLOAD_STATE_FILE);
     }
 
     private static void saveDownloadState(Properties state) throws IOException {
-        try (BufferedWriter writer = Files.newBufferedWriter(dataFile(DOWNLOAD_STATE_FILE), StandardCharsets.UTF_8)) {
-            state.store(writer, "IMDb download versions - written by FilterAndJoinTsv");
+        saveProperties(DOWNLOAD_STATE_FILE, state, "IMDb download versions - written by FilterAndJoinTsv");
+    }
+
+    // A properties file in the data directory; empty if it doesn't exist yet
+    private static Properties loadProperties(String file) throws IOException {
+        Properties properties = new Properties();
+        Path path = dataFile(file);
+        if (Files.exists(path)) {
+            try (BufferedReader reader = Files.newBufferedReader(path, StandardCharsets.UTF_8)) {
+                properties.load(reader);
+            }
+        }
+        return properties;
+    }
+
+    private static void saveProperties(String file, Properties properties, String comment) throws IOException {
+        try (BufferedWriter writer = Files.newBufferedWriter(dataFile(file), StandardCharsets.UTF_8)) {
+            properties.store(writer, comment);
         }
     }
 

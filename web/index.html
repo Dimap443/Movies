@@ -182,12 +182,20 @@
     return result;
   }
 
-  // Movies not seen on this browser's previous visit are highlighted (none on a first visit)
+  // Movies not seen before today's first visit on this browser are highlighted for the rest of
+  // the day (none on a first visit)
   function markNew() {
-    const previous = store.get("seenIds");
-    const seen = previous ? new Set(previous.split(" ")) : null;
-    for (const m of movies) m.isNew = seen !== null && !seen.has(m.id);
-    store.set("seenIds", movies.map(m => m.id).join(" "));
+    const ids = movies.map(m => m.id).join(" ");
+    const today = new Date().toDateString();
+    let baseline = store.get("newBaseIds");
+    if (store.get("newBaseDay") !== today || baseline === null) {
+      baseline = store.get("seenIds") ?? ids;  // the list as of the last visit before today
+      store.set("newBaseIds", baseline);
+      store.set("newBaseDay", today);
+    }
+    const seen = new Set(baseline.split(" "));
+    for (const m of movies) m.isNew = !seen.has(m.id);
+    store.set("seenIds", ids);
   }
 
   function fillCountries() {
@@ -283,7 +291,7 @@
   function updateStatus() {
     const newCount = movies.filter(m => m.isNew).length;
     const parts = [visible.length.toLocaleString() + " of " + movies.length.toLocaleString() + " movies"];
-    if (newCount) parts.push(newCount + " new since your last visit");
+    if (newCount) parts.push(newCount + " new");
     if (updatedText) parts.push(updatedText);
     els.status.textContent = parts.join(" · ");
   }

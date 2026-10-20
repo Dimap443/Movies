@@ -45,4 +45,4 @@ second.tsv
 downloads.properties
 
 ### TMDb API token (local only, never commit)
-tmdb.token
+tmdb.txt

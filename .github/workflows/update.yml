@@ -53,7 +53,9 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit -m "Update merged.tsv" merged.tsv
-          git push
+          # master may have moved on during the run (a push, or a re-run of an older run)
+          git pull --rebase origin master
+          git push origin HEAD:master
 
   publish:
     needs: update

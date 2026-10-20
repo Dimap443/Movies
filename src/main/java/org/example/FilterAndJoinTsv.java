@@ -342,87 +342,11 @@ public class FilterAndJoinTsv extends JFrame {
 
             @Override
             protected UpdateResult doInBackground() throws Exception {
-                logStart("Update");
-                Properties state = loadDownloadState();
-
-                // Step 0: download whichever files IMDb has regenerated since the last update
-                logStart("Download " + FIRST_GZ_URL);
-                boolean firstChanged = downloadIfChanged(FIRST_GZ_URL, FIRST_GZ_FILE, state);
-                logEnd("Download " + FIRST_GZ_URL + (firstChanged ? "" : " (unchanged, skipped)"));
-                logStart("Download " + SECOND_GZ_URL);
-                boolean secondChanged = downloadIfChanged(SECOND_GZ_URL, SECOND_GZ_FILE, state);
-                logEnd("Download " + SECOND_GZ_URL + (secondChanged ? "" : " (unchanged, skipped)"));
-                saveDownloadState(state);
-
-                // Nothing to redo if merged.tsv was already completely built from these exact files
-                if (isMergedUpToDate(state)) {
-                    unchangedSince = state.getProperty(FIRST_GZ_FILE + ".lastModified", "the last update");
-                    logEnd("Update (IMDb data unchanged since " + unchangedSince + ")");
-                    return UpdateResult.UNCHANGED;
+                UpdateResult result = performUpdate();
+                if (result == UpdateResult.UNCHANGED) {
+                    unchangedSince = lastModified(loadDownloadState());
                 }
-
-                // Steps 1–2: filter
-                logStart("Filter " + FIRST_GZ_FILE);
-                Map<String, String[]> firstFiltered = filterFirstFile();
-                logEnd("Filter " + FIRST_GZ_FILE + " (" + firstFiltered.size() + " rows kept)");
-                logStart("Filter " + SECOND_GZ_FILE);
-                Map<String, String[]> secondFiltered = filterSecondFile();
-                logEnd("Filter " + SECOND_GZ_FILE + " (" + secondFiltered.size() + " rows kept)");
-
-                // Step 2b: country of origin, only for titles that survive the join: Wikidata first,
-                // then TMDb for the titles Wikidata doesn't know.
-                // Not fatal: if a source is unavailable its titles are left blank.
-                Set<String> joinedKeys = new HashSet<>(firstFiltered.keySet());
-                joinedKeys.retainAll(secondFiltered.keySet());
-                // Countries already in the previous merged.tsv are kept; only the rest are looked up.
-                Map<String, String> countries = loadKnownCountries();
-                joinedKeys.removeAll(countries.keySet());
-                boolean countriesLoaded = true;
-                logStart("Wikidata country lookup (" + joinedKeys.size() + " titles)");
-                try {
-                    Map<String, String> wikidataCountries = fetchWikidataCountries(joinedKeys);
-                    countries.putAll(wikidataCountries);
-                    logEnd("Wikidata country lookup (" + wikidataCountries.size() + " found)");
-                } catch (IOException e) {
-                    countriesLoaded = false;
-                    logEnd("Wikidata country lookup FAILED: " + e.getMessage());
-                    LOG.log(Level.WARNING, "Wikidata country lookup failed", e);
-                }
-
-                String tmdbToken = loadTmdbToken();
-                if (tmdbToken != null) {
-                    Set<String> missing = new HashSet<>(joinedKeys);
-                    missing.removeAll(countries.keySet());
-                    logStart("TMDb country lookup (" + missing.size() + " titles)");
-                    try {
-                        Map<String, String> tmdbCountries = fetchTmdbCountries(missing, tmdbToken);
-                        countries.putAll(tmdbCountries);
-                        logEnd("TMDb country lookup (" + tmdbCountries.size() + " found)");
-                    } catch (IOException e) {
-                        countriesLoaded = false;
-                        logEnd("TMDb country lookup FAILED: " + e.getMessage());
-                        LOG.log(Level.WARNING, "TMDb country lookup failed", e);
-                    }
-                } else {
-                    log("TMDb country lookup skipped (no token)");
-                }
-
-                // Steps 3–4: merge and save
-                logStart("Merge and save " + MERGED_FILE);
-                mergeAndSave(firstFiltered, secondFiltered, countries);
-                logEnd("Merge and save " + MERGED_FILE);
-
-                // Only a complete build counts: after a failed country lookup the next Update
-                // reprocesses (and retries the lookup) even if IMDb hasn't changed
-                if (countriesLoaded) {
-                    for (String file : List.of(FIRST_GZ_FILE, SECOND_GZ_FILE)) {
-                        state.setProperty(file + ".merged", fileVersion(state, file));
-                    }
-                    saveDownloadState(state);
-                }
-                logEnd("Update");
-
-                return countriesLoaded ? UpdateResult.COMPLETE : UpdateResult.COUNTRIES_INCOMPLETE;
+                return result;
             }
 
             @Override
@@ -484,6 +408,96 @@ public class FilterAndJoinTsv extends JFrame {
     // -- Existing logic below (slightly adapted to throw InterruptedException) ---
 
     private enum UpdateResult { UNCHANGED, COMPLETE, COUNTRIES_INCOMPLETE }
+
+    // The whole update, shared by the Update button and the headless --update run:
+    // download, filter, look up countries, then merge and save merged.tsv
+    private static UpdateResult performUpdate() throws IOException, InterruptedException {
+        logStart("Update");
+        Properties state = loadDownloadState();
+
+        // Step 0: download whichever files IMDb has regenerated since the last update
+        logStart("Download " + FIRST_GZ_URL);
+        boolean firstChanged = downloadIfChanged(FIRST_GZ_URL, FIRST_GZ_FILE, state);
+        logEnd("Download " + FIRST_GZ_URL + (firstChanged ? "" : " (unchanged, skipped)"));
+        logStart("Download " + SECOND_GZ_URL);
+        boolean secondChanged = downloadIfChanged(SECOND_GZ_URL, SECOND_GZ_FILE, state);
+        logEnd("Download " + SECOND_GZ_URL + (secondChanged ? "" : " (unchanged, skipped)"));
+        saveDownloadState(state);
+
+        // Nothing to redo if merged.tsv was already completely built from these exact files
+        if (isMergedUpToDate(state)) {
+            logEnd("Update (IMDb data unchanged since " + lastModified(state) + ")");
+            return UpdateResult.UNCHANGED;
+        }
+
+        // Steps 1–2: filter
+        logStart("Filter " + FIRST_GZ_FILE);
+        Map<String, String[]> firstFiltered = filterFirstFile();
+        logEnd("Filter " + FIRST_GZ_FILE + " (" + firstFiltered.size() + " rows kept)");
+        logStart("Filter " + SECOND_GZ_FILE);
+        Map<String, String[]> secondFiltered = filterSecondFile();
+        logEnd("Filter " + SECOND_GZ_FILE + " (" + secondFiltered.size() + " rows kept)");
+
+        // Step 2b: country of origin, only for titles that survive the join: Wikidata first,
+        // then TMDb for the titles Wikidata doesn't know.
+        // Not fatal: if a source is unavailable its titles are left blank.
+        Set<String> joinedKeys = new HashSet<>(firstFiltered.keySet());
+        joinedKeys.retainAll(secondFiltered.keySet());
+        // Countries already in the previous merged.tsv are kept; only the rest are looked up.
+        Map<String, String> countries = loadKnownCountries();
+        joinedKeys.removeAll(countries.keySet());
+        boolean countriesLoaded = true;
+        logStart("Wikidata country lookup (" + joinedKeys.size() + " titles)");
+        try {
+            Map<String, String> wikidataCountries = fetchWikidataCountries(joinedKeys);
+            countries.putAll(wikidataCountries);
+            logEnd("Wikidata country lookup (" + wikidataCountries.size() + " found)");
+        } catch (IOException e) {
+            countriesLoaded = false;
+            logEnd("Wikidata country lookup FAILED: " + e.getMessage());
+            LOG.log(Level.WARNING, "Wikidata country lookup failed", e);
+        }
+
+        String tmdbToken = loadTmdbToken();
+        if (tmdbToken != null) {
+            Set<String> missing = new HashSet<>(joinedKeys);
+            missing.removeAll(countries.keySet());
+            logStart("TMDb country lookup (" + missing.size() + " titles)");
+            try {
+                Map<String, String> tmdbCountries = fetchTmdbCountries(missing, tmdbToken);
+                countries.putAll(tmdbCountries);
+                logEnd("TMDb country lookup (" + tmdbCountries.size() + " found)");
+            } catch (IOException e) {
+                countriesLoaded = false;
+                logEnd("TMDb country lookup FAILED: " + e.getMessage());
+                LOG.log(Level.WARNING, "TMDb country lookup failed", e);
+            }
+        } else {
+            log("TMDb country lookup skipped (no token)");
+        }
+
+        // Steps 3–4: merge and save
+        logStart("Merge and save " + MERGED_FILE);
+        mergeAndSave(firstFiltered, secondFiltered, countries);
+        logEnd("Merge and save " + MERGED_FILE);
+
+        // Only a complete build counts: after a failed country lookup the next Update
+        // reprocesses (and retries the lookup) even if IMDb hasn't changed
+        if (countriesLoaded) {
+            for (String file : List.of(FIRST_GZ_FILE, SECOND_GZ_FILE)) {
+                state.setProperty(file + ".merged", fileVersion(state, file));
+            }
+            saveDownloadState(state);
+        }
+        logEnd("Update");
+
+        return countriesLoaded ? UpdateResult.COMPLETE : UpdateResult.COUNTRIES_INCOMPLETE;
+    }
+
+    // When IMDb last regenerated the downloaded data, for "unchanged since" messages
+    private static String lastModified(Properties state) {
+        return state.getProperty(FIRST_GZ_FILE + ".lastModified", "the last update");
+    }
 
     // Download gzUrl to outputFile unless the copy on disk is still current: the ETag and
     // Last-Modified saved in state are sent back, and the server answers 304 (no body) if the
@@ -949,7 +963,15 @@ public class FilterAndJoinTsv extends JFrame {
         }
     }
 
-    static void main() {
+    // With --update, runs the update once without a window (for the scheduled GitHub Action) and
+    // exits non-zero if it failed; otherwise opens the app as usual
+    static void main(String[] args) throws IOException, InterruptedException {
+        if (List.of(args).contains("--update")) {
+            Files.createDirectories(DATA_DIR);
+            UpdateResult result = performUpdate();
+            log("Result: " + result);
+            return;
+        }
         SwingUtilities.invokeLater(() -> {
             try {
                 new FilterAndJoinTsv().setVisible(true);

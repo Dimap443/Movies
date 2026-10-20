@@ -1,0 +1,335 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Movies</title>
+<style>
+  :root {
+    --bg: #f7f7f5;
+    --surface: #ffffff;
+    --text: #1d1d1b;
+    --muted: #6b6b66;
+    --border: #e2e2dd;
+    --accent: #b45309;
+    --new: #e7f6e7;
+    --new-text: #1f6b2a;
+    --row-hover: #f1f0ec;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #161615;
+      --surface: #1f1f1d;
+      --text: #ecebe6;
+      --muted: #9a9993;
+      --border: #33332f;
+      --accent: #f59e0b;
+      --new: #1d3320;
+      --new-text: #8fd69a;
+      --row-hover: #272724;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  header {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: var(--bg);
+    border-bottom: 1px solid var(--border);
+    padding: 14px 16px 12px;
+  }
+  .title-row { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  h1 { margin: 0; font-size: 20px; letter-spacing: -0.01em; }
+  #status { color: var(--muted); font-size: 13px; }
+  .controls { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+  input, select, button {
+    font: inherit;
+    color: var(--text);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 7px 10px;
+  }
+  input { flex: 1 1 220px; min-width: 0; }
+  select { flex: 0 1 220px; min-width: 0; }
+  input:focus, select:focus, button:focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; }
+  button { cursor: pointer; }
+  main { padding: 0 16px 32px; }
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; margin-top: 4px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  td { overflow-wrap: anywhere; }  /* a long unbroken title must not widen the table past a phone screen */
+  th {
+    position: sticky;
+    top: 0;
+    background: var(--bg);
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--muted);
+    cursor: pointer;
+    user-select: none;
+    white-space: nowrap;
+  }
+  th[aria-sort="ascending"]::after { content: " \2191"; color: var(--accent); }
+  th[aria-sort="descending"]::after { content: " \2193"; color: var(--accent); }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tbody tr:hover { background: var(--row-hover); }
+  tr.new { background: var(--new); }
+  tr.new td:first-child::before {
+    content: "NEW";
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--new-text);
+    margin-right: 6px;
+    letter-spacing: 0.05em;
+  }
+  a { color: inherit; text-decoration: none; }
+  a:hover { color: var(--accent); text-decoration: underline; }
+  .muted { color: var(--muted); }
+  #more { display: block; margin: 16px auto 0; }
+  @media (max-width: 640px) {
+    .hide-sm { display: none; }
+    th, td { padding: 8px 6px; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="title-row">
+    <h1>Movies</h1>
+    <span id="status">Loading…</span>
+  </div>
+  <div class="controls">
+    <input id="filter" type="search" placeholder="Filter title, genre, country, year…" aria-label="Filter">
+    <select id="hideCountry" aria-label="Hide country"></select>
+  </div>
+</header>
+<main>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th data-key="title">Title</th>
+          <th data-key="year" class="num">Year</th>
+          <th data-key="genre" class="hide-sm">Genre</th>
+          <th data-key="rating" class="num">Rating</th>
+          <th data-key="votes" class="num hide-sm">Voted</th>
+          <th data-key="country">Country</th>
+        </tr>
+      </thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </div>
+  <button id="more" hidden>Show more</button>
+</main>
+<script>
+  // Same as the desktop app: listed at the top of "Hide country" before the alphabetical rest
+  const FREQUENT_COUNTRIES = ["India"];
+  const MISSING = "\\N";  // IMDb's marker for a missing value
+  const PAGE_SIZE = 300;  // rows rendered at a time; more appear on scroll
+
+  const els = {
+    status: document.getElementById("status"),
+    filter: document.getElementById("filter"),
+    hideCountry: document.getElementById("hideCountry"),
+    rows: document.getElementById("rows"),
+    more: document.getElementById("more"),
+  };
+
+  let movies = [];
+  let visible = [];
+  let shown = 0;
+  let sort = null;  // {key, dir} once a header is clicked; until then new movies first
+
+  // Per-browser conveniences; the page works the same without storage
+  const store = {
+    get(key) { try { return localStorage.getItem(key); } catch { return null; } },
+    set(key, value) { try { localStorage.setItem(key, value); } catch { /* ignore */ } },
+  };
+
+  function numberOrNull(value) {
+    const n = Number(value);
+    return value === "" || value === MISSING || Number.isNaN(n) ? null : n;
+  }
+
+  // merged.tsv columns: 0 id, 2 title, 5 year, 8 genre, 9 rating, 10 votes, 11 country
+  function parse(text) {
+    const result = [];
+    for (const line of text.split(/\r?\n/)) {  // a Windows checkout may have CRLF line endings
+      const cols = line.split("\t");
+      if (cols.length <= 5) continue;
+      const genre = cols[8] && cols[8] !== MISSING ? cols[8] : "";
+      const country = cols[11] && cols[11] !== MISSING ? cols[11].trim() : "";
+      result.push({
+        id: cols[0],
+        title: cols[2],
+        year: numberOrNull(cols[5]),
+        genre: genre.replaceAll(",", ", "),
+        rating: numberOrNull(cols[9]),
+        votes: numberOrNull(cols[10]),
+        country: country.replaceAll(",", ", "),
+        countries: country ? country.split(",") : [],
+        isNew: false,
+      });
+    }
+    return result;
+  }
+
+  // Movies not seen on this browser's previous visit are highlighted (none on a first visit)
+  function markNew() {
+    const previous = store.get("seenIds");
+    const seen = previous ? new Set(previous.split(" ")) : null;
+    for (const m of movies) m.isNew = seen !== null && !seen.has(m.id);
+    store.set("seenIds", movies.map(m => m.id).join(" "));
+  }
+
+  function fillCountries() {
+    const all = new Set(movies.flatMap(m => m.countries));
+    const options = [""];
+    for (const c of FREQUENT_COUNTRIES) if (all.delete(c)) options.push(c);
+    options.push(...[...all].sort((a, b) => a.localeCompare(b)));
+    els.hideCountry.replaceChildren(...options.map(c => {
+      const o = document.createElement("option");
+      o.value = c;
+      o.textContent = c ? "Hide " + c : "Hide country…";
+      return o;
+    }));
+    const saved = store.get("hideCountry");
+    if (saved && options.includes(saved)) els.hideCountry.value = saved;
+  }
+
+  function compare(a, b, key) {
+    const x = a[key], y = b[key];
+    if (x === y) return 0;
+    if (x === null || x === "") return 1;  // missing values last either way
+    if (y === null || y === "") return -1;
+    return typeof x === "number" ? x - y : x.localeCompare(y);
+  }
+
+  function apply() {
+    const text = els.filter.value.trim().toLowerCase();
+    const hidden = els.hideCountry.value;
+    visible = movies.filter(m => {
+      // Like the desktop app: hide co-productions that include the country, and movies with
+      // no known country, since they may be from it too
+      if (hidden && (m.countries.length === 0 || m.countries.includes(hidden))) return false;
+      if (!text) return true;
+      return [m.title, m.year, m.genre, m.rating, m.country, m.id]
+        .some(v => v !== null && String(v).toLowerCase().includes(text));
+    });
+
+    if (sort) {
+      const dir = sort.dir === "ascending" ? 1 : -1;
+      visible.sort((a, b) => {
+        const c = compare(a, b, sort.key);
+        const missing = a[sort.key] === null || a[sort.key] === "" || b[sort.key] === null || b[sort.key] === "";
+        return missing ? c : c * dir;
+      });
+    } else {
+      visible.sort((a, b) => b.isNew - a.isNew);  // new movies on top, otherwise file order
+    }
+
+    for (const th of document.querySelectorAll("th")) {
+      th.setAttribute("aria-sort", sort && th.dataset.key === sort.key ? sort.dir : "none");
+    }
+    els.rows.replaceChildren();
+    shown = 0;
+    renderMore();
+    updateStatus();
+  }
+
+  function cell(text, className) {
+    const td = document.createElement("td");
+    if (className) td.className = className;
+    td.textContent = text ?? "";
+    return td;
+  }
+
+  function renderMore() {
+    const fragment = document.createDocumentFragment();
+    for (const m of visible.slice(shown, shown + PAGE_SIZE)) {
+      const tr = document.createElement("tr");
+      if (m.isNew) tr.className = "new";
+      const title = document.createElement("td");
+      const link = document.createElement("a");
+      link.href = "https://www.imdb.com/title/" + m.id;
+      link.target = "_blank";
+      link.rel = "noopener";
+      link.textContent = m.title;
+      title.append(link);
+      tr.append(
+        title,
+        cell(m.year, "num"),
+        cell(m.genre, "hide-sm muted"),
+        cell(m.rating?.toFixed(1), "num"),
+        cell(m.votes?.toLocaleString(), "num hide-sm muted"),
+        cell(m.country, "muted"),
+      );
+      fragment.append(tr);
+    }
+    els.rows.append(fragment);
+    shown = Math.min(shown + PAGE_SIZE, visible.length);
+    els.more.hidden = shown >= visible.length;
+  }
+
+  let updatedText = "";
+  function updateStatus() {
+    const newCount = movies.filter(m => m.isNew).length;
+    const parts = [visible.length.toLocaleString() + " of " + movies.length.toLocaleString() + " movies"];
+    if (newCount) parts.push(newCount + " new since your last visit");
+    if (updatedText) parts.push(updatedText);
+    els.status.textContent = parts.join(" · ");
+  }
+
+  document.querySelector("thead").addEventListener("click", e => {
+    const key = e.target.closest("th")?.dataset.key;
+    if (!key) return;
+    // First click: highest/latest first for numbers, A–Z for text; second click reverses
+    const numeric = ["year", "rating", "votes"].includes(key);
+    const first = numeric ? "descending" : "ascending";
+    sort = sort?.key === key
+      ? { key, dir: sort.dir === "ascending" ? "descending" : "ascending" }
+      : { key, dir: first };
+    apply();
+  });
+
+  let filterTimer;
+  els.filter.addEventListener("input", () => {
+    clearTimeout(filterTimer);
+    filterTimer = setTimeout(apply, 150);
+  });
+  els.hideCountry.addEventListener("change", () => {
+    store.set("hideCountry", els.hideCountry.value);
+    apply();
+  });
+  els.more.addEventListener("click", renderMore);
+  new IntersectionObserver(entries => {
+    if (entries[0].isIntersecting && !els.more.hidden) renderMore();
+  }, { rootMargin: "600px" }).observe(els.more);
+
+  fetch("merged.tsv", { cache: "no-cache" })
+    .then(response => {
+      if (!response.ok) throw new Error("HTTP " + response.status);
+      const modified = response.headers.get("Last-Modified");
+      if (modified) updatedText = "updated " + new Date(modified).toLocaleDateString();
+      return response.text();
+    })
+    .then(text => {
+      movies = parse(text);
+      markNew();
+      fillCountries();
+      apply();
+    })
+    .catch(err => {
+      els.status.textContent = "Could not load merged.tsv (" + err.message + ")";
+    });
+</script>
+</body>
+</html>

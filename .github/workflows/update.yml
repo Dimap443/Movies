@@ -1,0 +1,66 @@
+name: Update movies and publish site
+
+on:
+  schedule:
+    - cron: "17 7 * * *"  # daily; IMDb regenerates its datasets once a day
+  workflow_dispatch:       # "Run workflow" button on the Actions tab
+  push:                    # republish when the page or the data is changed by hand
+    branches: [master]
+    paths: [web/**, merged.tsv, .github/workflows/update.yml]
+
+permissions:
+  contents: write  # commit merged.tsv
+  pages: write
+  id-token: write
+
+concurrency:
+  group: update-and-publish
+  cancel-in-progress: false
+
+jobs:
+  update:
+    if: github.event_name != 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: maven
+      - name: Build (without the Windows .exe)
+        run: mvn -B -q package -Dexec.skip=true
+      - name: Update merged.tsv
+        env:
+          TMDB_API_TOKEN: ${{ secrets.TMDB_API_TOKEN }}
+        run: java --enable-preview -Djava.awt.headless=true -cp "target/libs/*" org.example.FilterAndJoinTsv --update
+      - name: Commit merged.tsv if it changed
+        run: |
+          if git diff --quiet merged.tsv; then
+            echo "merged.tsv unchanged"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Update merged.tsv" merged.tsv
+          git push
+
+  publish:
+    needs: update
+    # Also runs when update was skipped (a push), but not after it failed
+    if: ${{ !cancelled() && needs.update.result != 'failure' }}
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: master  # includes the merged.tsv the update job just pushed
+      - run: cp merged.tsv web/
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: web
+      - id: deploy
+        uses: actions/deploy-pages@v4

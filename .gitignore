@@ -46,3 +46,6 @@ downloads.properties
 
 ### TMDb API token (local only, never commit)
 tmdb.txt
+
+### Web page copy of merged.tsv (the publish job adds it)
+web/merged.tsv

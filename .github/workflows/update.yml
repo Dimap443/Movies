@@ -30,6 +30,16 @@ jobs:
           cache: maven
       - name: Build (without the Windows .exe)
         run: mvn -B -q package -Dexec.skip=true
+      # Annotations are public, unlike job logs, so this shows whether the secret is set (never its value)
+      - name: Check TMDb token
+        env:
+          TMDB_API_TOKEN: ${{ secrets.TMDB_API_TOKEN }}
+        run: |
+          if [ -n "$TMDB_API_TOKEN" ]; then
+            echo "::notice::TMDB_API_TOKEN secret is set; the TMDb country lookup will run"
+          else
+            echo "::warning::TMDB_API_TOKEN secret is not set; the TMDb country lookup will be skipped"
+          fi
       - name: Update merged.tsv
         env:
           TMDB_API_TOKEN: ${{ secrets.TMDB_API_TOKEN }}

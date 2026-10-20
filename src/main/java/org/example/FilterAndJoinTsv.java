@@ -59,6 +59,11 @@ public class FilterAndJoinTsv extends JFrame {
     // Per downloaded file: the server's ETag and Last-Modified (sent back so an unchanged file
     // answers 304 with no body), and the version merged.tsv was last completely built from
     private static final String DOWNLOAD_STATE_FILE = "downloads.properties";
+    // The packaged .exe (jpackage sets jpackage.app-path) keeps its files in %LOCALAPPDATA%\Movies,
+    // since its install folder may not be writable; run from the IDE they stay in the working directory
+    private static final Path DATA_DIR = System.getProperty("jpackage.app-path") == null
+            ? Paths.get("")
+            : Paths.get(System.getenv("LOCALAPPDATA"), "Movies");
 
     // Country of origin comes from Wikidata (P495), matched on the IMDb ID (P345)
     private static final String WIKIDATA_SPARQL_URL = "https://query.wikidata.org/sparql";
@@ -132,8 +137,13 @@ public class FilterAndJoinTsv extends JFrame {
     private final JButton updateButton;
     private final JLabel statusLabel;
 
+    private static Path dataFile(String name) {
+        return DATA_DIR.resolve(name);
+    }
+
     public FilterAndJoinTsv() throws IOException {
         super("Movie Data Updater");
+        Files.createDirectories(DATA_DIR);
 
         // Table model: Movie title, year, genre, rating, viewers
         String[] columnNames = {"ID", "Title", "Year", "Genre", "Rating", "Voted", "Country"};
@@ -257,7 +267,7 @@ public class FilterAndJoinTsv extends JFrame {
 
     // Add this to the constructor, right before setLocationRelativeTo(null);
     private void loadExistingDataOnStartup() throws IOException {
-        Path mergedPath = Paths.get(MERGED_FILE);
+        Path mergedPath = dataFile(MERGED_FILE);
         if (Files.exists(mergedPath) && Files.size(mergedPath) > 0) {
             try {
                 logStart("Load existing " + MERGED_FILE);
@@ -480,8 +490,8 @@ public class FilterAndJoinTsv extends JFrame {
     // file hasn't changed. Returns true if a new copy was downloaded.
     private static boolean downloadIfChanged(String gzUrl, String outputFile, Properties state)
             throws IOException, InterruptedException {
-        Path outputPath = Paths.get(outputFile);
-        Path partPath = Paths.get(outputFile + ".part");  // never leave a half-written file in place
+        Path outputPath = dataFile(outputFile);
+        Path partPath = dataFile(outputFile + ".part");  // never leave a half-written file in place
 
         HttpClient client = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(30))
@@ -529,7 +539,7 @@ public class FilterAndJoinTsv extends JFrame {
 
     // True if merged.tsv was completely built from the downloaded files now on disk
     private static boolean isMergedUpToDate(Properties state) {
-        if (!Files.exists(Paths.get(MERGED_FILE))) {
+        if (!Files.exists(dataFile(MERGED_FILE))) {
             return false;
         }
         for (String file : List.of(FIRST_GZ_FILE, SECOND_GZ_FILE)) {
@@ -543,7 +553,7 @@ public class FilterAndJoinTsv extends JFrame {
 
     private static Properties loadDownloadState() throws IOException {
         Properties state = new Properties();
-        Path path = Paths.get(DOWNLOAD_STATE_FILE);
+        Path path = dataFile(DOWNLOAD_STATE_FILE);
         if (Files.exists(path)) {
             try (BufferedReader reader = Files.newBufferedReader(path, StandardCharsets.UTF_8)) {
                 state.load(reader);
@@ -553,7 +563,7 @@ public class FilterAndJoinTsv extends JFrame {
     }
 
     private static void saveDownloadState(Properties state) throws IOException {
-        try (BufferedWriter writer = Files.newBufferedWriter(Paths.get(DOWNLOAD_STATE_FILE), StandardCharsets.UTF_8)) {
+        try (BufferedWriter writer = Files.newBufferedWriter(dataFile(DOWNLOAD_STATE_FILE), StandardCharsets.UTF_8)) {
             state.store(writer, "IMDb download versions - written by FilterAndJoinTsv");
         }
     }
@@ -562,7 +572,7 @@ public class FilterAndJoinTsv extends JFrame {
     // are never split across buffer boundaries.
     private static BufferedReader openGzip(String file) throws IOException {
         return new BufferedReader(new InputStreamReader(
-                new GZIPInputStream(new BufferedInputStream(Files.newInputStream(Paths.get(file))), 65536),
+                new GZIPInputStream(new BufferedInputStream(Files.newInputStream(dataFile(file))), 65536),
                 StandardCharsets.UTF_8));
     }
 
@@ -710,7 +720,7 @@ public class FilterAndJoinTsv extends JFrame {
     // TMDb API token from the environment or the local token file; null if neither is set
     private static String loadTmdbToken() {
         String token = System.getenv(TMDB_TOKEN_ENV);
-        Path tokenFile = Paths.get(TMDB_TOKEN_FILE);
+        Path tokenFile = dataFile(TMDB_TOKEN_FILE);
         if ((token == null || token.isBlank()) && Files.exists(tokenFile)) {
             try {
                 token = Files.readString(tokenFile, StandardCharsets.UTF_8);
@@ -826,7 +836,7 @@ public class FilterAndJoinTsv extends JFrame {
     // Countries already known from the previous merged.tsv (IMDb ID -> country); empty if no file yet
     private static Map<String, String> loadKnownCountries() {
         Map<String, String> known = new HashMap<>();
-        Path path = Paths.get(MERGED_FILE);
+        Path path = dataFile(MERGED_FILE);
         if (!Files.exists(path)) {
             return known;
         }
@@ -848,7 +858,7 @@ public class FilterAndJoinTsv extends JFrame {
     private static void mergeAndSave(Map<String, String[]> firstData,
                                      Map<String, String[]> secondData,
                                      Map<String, String> countries) throws IOException {
-        Path outputPath = Paths.get(FilterAndJoinTsv.MERGED_FILE);
+        Path outputPath = dataFile(FilterAndJoinTsv.MERGED_FILE);
 
         try (BufferedWriter writer = Files.newBufferedWriter(outputPath, StandardCharsets.UTF_8)) {
             for (Map.Entry<String, String[]> entry : firstData.entrySet()) {
@@ -889,7 +899,7 @@ public class FilterAndJoinTsv extends JFrame {
     private void loadMergedFileIntoTable() throws IOException {
         tableModel.setRowCount(0);  // clear old data
 
-        Path path = Paths.get(FilterAndJoinTsv.MERGED_FILE);
+        Path path = dataFile(FilterAndJoinTsv.MERGED_FILE);
         try (BufferedReader reader = Files.newBufferedReader(path, StandardCharsets.UTF_8)) {
             String line;
             while ((line = reader.readLine()) != null) {

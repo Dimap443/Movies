@@ -11,6 +11,7 @@ import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.io.Serial;
 import java.net.URI;
 import java.net.URLEncoder;
 import java.net.http.HttpClient;
@@ -48,7 +49,10 @@ import java.awt.event.MouseEvent;
 import java.awt.Desktop;
 
 
-public class FilterAndJoinTsv extends JFrame {
+public final class FilterAndJoinTsv extends JFrame {
+
+    @Serial
+    private static final long serialVersionUID = 1L;
 
     // URLs and filenames
     private static final String FIRST_GZ_URL = "https://datasets.imdbws.com/title.basics.tsv.gz";
@@ -131,10 +135,10 @@ public class FilterAndJoinTsv extends JFrame {
 
     private static final Color NEW_MOVIE_COLOR = new Color(200, 255, 200);
 
-    private final Set<String> newMovieIds = new HashSet<>();  // IMDb ids not seen before today
+    private final transient Set<String> newMovieIds = new HashSet<>();  // IMDb ids not seen before today
     private final DefaultTableModel tableModel;
     private final JTable table;
-    private final TableRowSorter<DefaultTableModel> sorter;
+    private final transient TableRowSorter<DefaultTableModel> sorter;
     private final JTextField filterField;
     private final JComboBox<String> hideCountryBox;
     private final JButton updateButton;

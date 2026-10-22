@@ -122,6 +122,7 @@
           <th data-key="rating" class="num">Rating</th>
           <th data-key="votes" class="num hide-sm">Voted</th>
           <th data-key="country">Country</th>
+          <th data-key="added" class="num hide-sm">Date added</th>
         </tr>
       </thead>
       <tbody id="rows"></tbody>
@@ -159,7 +160,8 @@
     return value === "" || value === MISSING || Number.isNaN(n) ? null : n;
   }
 
-  // merged.tsv columns: 0 id, 2 title, 5 year, 8 genre, 9 rating, 10 votes, 11 country
+  // merged.tsv columns: 0 id, 2 title, 5 year, 8 genre, 9 rating, 10 votes, 11 country,
+  // 12 date added (yyyy-MM-dd, so it sorts as text)
   function parse(text) {
     const result = [];
     for (const line of text.split(/\r?\n/)) {  // a Windows checkout may have CRLF line endings
@@ -167,6 +169,7 @@
       if (cols.length <= 5) continue;
       const genre = cols[8] && cols[8] !== MISSING ? cols[8] : "";
       const country = cols[11] && cols[11] !== MISSING ? cols[11].trim() : "";
+      const added = cols[12] && cols[12] !== MISSING ? cols[12].trim() : "";
       result.push({
         id: cols[0],
         title: cols[2],
@@ -176,6 +179,7 @@
         votes: numberOrNull(cols[10]),
         country: country.replaceAll(",", ", "),
         countries: country ? country.split(",") : [],
+        added,
         isNew: false,
       });
     }
@@ -229,7 +233,7 @@
       // no known country, since they may be from it too
       if (hidden && (m.countries.length === 0 || m.countries.includes(hidden))) return false;
       if (!text) return true;
-      return [m.title, m.year, m.genre, m.rating, m.country, m.id]
+      return [m.title, m.year, m.genre, m.rating, m.country, m.added, m.id]
         .some(v => v !== null && String(v).toLowerCase().includes(text));
     });
 
@@ -279,6 +283,7 @@
         cell(m.rating?.toFixed(1), "num"),
         cell(m.votes?.toLocaleString(), "num hide-sm muted"),
         cell(m.country, "muted"),
+        cell(m.added, "num hide-sm muted"),
       );
       fragment.append(tr);
     }
@@ -299,9 +304,9 @@
   document.querySelector("thead").addEventListener("click", e => {
     const key = e.target.closest("th")?.dataset.key;
     if (!key) return;
-    // First click: highest/latest first for numbers, A–Z for text; second click reverses
-    const numeric = ["year", "rating", "votes"].includes(key);
-    const first = numeric ? "descending" : "ascending";
+    // First click: highest/latest first for numbers and dates, A–Z for text; second click reverses
+    const latestFirst = ["year", "rating", "votes", "added"].includes(key);
+    const first = latestFirst ? "descending" : "ascending";
     sort = sort?.key === key
       ? { key, dir: sort.dir === "ascending" ? "descending" : "ascending" }
       : { key, dir: first };

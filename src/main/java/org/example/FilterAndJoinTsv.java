@@ -108,6 +108,10 @@ public final class FilterAndJoinTsv extends JFrame {
 
     private static final int COUNTRY_COLUMN = 6;
 
+    // merged.tsv columns carried over from the previous build
+    private static final int MERGED_COUNTRY_COLUMN = 11;
+    private static final int MERGED_DATE_ADDED_COLUMN = 12;  // yyyy-MM-dd, when the movie joined the list
+
     // Frequently selected countries, listed at the top of "Hide country" before the alphabetical rest
     private static final List<String> FREQUENT_COUNTRIES = List.of("India");
 
@@ -153,7 +157,7 @@ public final class FilterAndJoinTsv extends JFrame {
         Files.createDirectories(DATA_DIR);
 
         // Table model: Movie title, year, genre, rating, viewers
-        String[] columnNames = {"ID", "Title", "Year", "Genre", "Rating", "Voted", "Country"};
+        String[] columnNames = {"ID", "Title", "Year", "Genre", "Rating", "Voted", "Country", "Date added"};
         tableModel = new DefaultTableModel(columnNames, 0) {
             // Report numeric types so the sorter compares numbers, not strings ("10000" < "9999")
             @Override
@@ -480,7 +484,7 @@ public final class FilterAndJoinTsv extends JFrame {
         Set<String> joinedKeys = new HashSet<>(firstFiltered.keySet());
         joinedKeys.retainAll(secondFiltered.keySet());
         // Countries already in the previous merged.tsv are kept; only the rest are looked up.
-        Map<String, String> countries = loadKnownCountries();
+        Map<String, String> countries = loadPreviousColumn(MERGED_COUNTRY_COLUMN);
         joinedKeys.removeAll(countries.keySet());
         boolean countriesLoaded = true;
         logStart("Wikidata country lookup (" + joinedKeys.size() + " titles)");
@@ -514,7 +518,7 @@ public final class FilterAndJoinTsv extends JFrame {
 
         // Steps 3–4: merge and save
         logStart("Merge and save " + MERGED_FILE);
-        mergeAndSave(firstFiltered, secondFiltered, countries);
+        mergeAndSave(firstFiltered, secondFiltered, countries, loadPreviousDatesAdded());
         logEnd("Merge and save " + MERGED_FILE);
 
         // Only a complete build counts: after a failed country lookup the next Update
@@ -892,8 +896,22 @@ public final class FilterAndJoinTsv extends JFrame {
         return name.startsWith("St. ") ? "Saint " + name.substring(4) : name;  // "St. Lucia"
     }
 
-    // Countries already known from the previous merged.tsv (IMDb ID -> country); empty if no file yet
-    private static Map<String, String> loadKnownCountries() {
+    // Date added per movie in the previous merged.tsv. Movies listed there without a date (a file
+    // from before this column existed) map to MISSING, so they stay undated instead of looking new.
+    // Null if there is no previous merged.tsv: then no date is known, and none is made up.
+    private static Map<String, String> loadPreviousDatesAdded() {
+        if (!Files.exists(dataFile(MERGED_FILE))) {
+            return null;
+        }
+        Map<String, String> dates = loadPreviousColumn(0);  // every listed movie (ID -> ID)
+        dates.replaceAll((_, _) -> MISSING);
+        dates.putAll(loadPreviousColumn(MERGED_DATE_ADDED_COLUMN));
+        return dates;
+    }
+
+    // One column of the previous merged.tsv (IMDb ID -> value), skipping missing values;
+    // empty if no file yet
+    private static Map<String, String> loadPreviousColumn(int column) {
         Map<String, String> known = new HashMap<>();
         Path path = dataFile(MERGED_FILE);
         if (!Files.exists(path)) {
@@ -903,12 +921,12 @@ public final class FilterAndJoinTsv extends JFrame {
             String line;
             while ((line = reader.readLine()) != null) {
                 String[] cols = line.split("\t", -1);
-                if (cols.length > 11 && !cols[11].isEmpty() && !MISSING.equals(cols[11])) {
-                    known.put(cols[0], cols[11]);
+                if (cols.length > column && !cols[column].isEmpty() && !MISSING.equals(cols[column])) {
+                    known.put(cols[0], cols[column]);
                 }
             }
         } catch (IOException e) {
-            LOG.log(Level.WARNING, "Could not read known countries from " + MERGED_FILE, e);
+            LOG.log(Level.WARNING, "Could not read column " + column + " of " + MERGED_FILE, e);
         }
         return known;
     }
@@ -916,7 +934,9 @@ public final class FilterAndJoinTsv extends JFrame {
     // Steps 3–4: merge and save
     private static void mergeAndSave(Map<String, String[]> firstData,
                                      Map<String, String[]> secondData,
-                                     Map<String, String> countries) throws IOException {
+                                     Map<String, String> countries,
+                                     Map<String, String> datesAdded) throws IOException {
+        String today = LocalDate.now().toString();
         Path outputPath = dataFile(FilterAndJoinTsv.MERGED_FILE);
 
         try (BufferedWriter writer = Files.newBufferedWriter(outputPath, StandardCharsets.UTF_8)) {
@@ -936,6 +956,8 @@ public final class FilterAndJoinTsv extends JFrame {
                         sb.append('\t').append(secondCols[i]);
                     }
                     sb.append('\t').append(countries.getOrDefault(key, MISSING));  // country
+                    // date added: kept from the previous build, today for a movie new to the list
+                    sb.append('\t').append(datesAdded == null ? MISSING : datesAdded.getOrDefault(key, today));
 
                     writer.write(sb.toString());
                     writer.newLine();
@@ -978,8 +1000,9 @@ public final class FilterAndJoinTsv extends JFrame {
                     Double rating = cols.length > 9 ? parseDoubleOrNull(cols[9]) : null;   // Rating
                     Integer voted = cols.length > 10 ? parseIntOrNull(cols[10]) : null;    // Voted
                     String country = cols.length > 11 ? blankIfMissing(cols[11]) : "";   // Country
+                    String dateAdded = cols.length > 12 ? blankIfMissing(cols[12]) : "";  // Date added
 
-                    tableModel.addRow(new Object[]{IMDB_ID, title, year, genre, rating, voted, country});
+                    tableModel.addRow(new Object[]{IMDB_ID, title, year, genre, rating, voted, country, dateAdded});
                 }
             }
         }

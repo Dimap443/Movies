@@ -152,9 +152,30 @@ public final class FilterAndJoinTsv extends JFrame {
         return DATA_DIR.resolve(name);
     }
 
+    // A merged.tsv put next to the packaged .exe is copied into the data directory if it is newer
+    // than the copy there (or there is none yet), so the app starts with that data
+    private static void importMergedFileBesideExe() {
+        String appPath = System.getProperty("jpackage.app-path");
+        if (appPath == null) {
+            return;
+        }
+        Path besideExe = Paths.get(appPath).resolveSibling(MERGED_FILE);
+        Path target = dataFile(MERGED_FILE);
+        try {
+            if (Files.exists(besideExe) && (!Files.exists(target)
+                    || Files.getLastModifiedTime(besideExe).compareTo(Files.getLastModifiedTime(target)) > 0)) {
+                Files.copy(besideExe, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.COPY_ATTRIBUTES);
+                log("Imported " + besideExe);
+            }
+        } catch (IOException e) {
+            LOG.log(Level.WARNING, "Could not import " + besideExe, e);
+        }
+    }
+
     public FilterAndJoinTsv() throws IOException {
         super("Movie Data Updater");
         Files.createDirectories(DATA_DIR);
+        importMergedFileBesideExe();
 
         // Table model: Movie title, year, genre, rating, viewers
         String[] columnNames = {"ID", "Title", "Year", "Genre", "Rating", "Voted", "Country", "Date added"};

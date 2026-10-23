@@ -4,9 +4,10 @@ on:
   schedule:
     # IMDb regenerates its datasets once a day. GitHub drops scheduled runs now and then,
     # so a second, later run catches a missed one (it changes nothing if the first one ran).
-    - cron: "5 9 * * *"
+    # Both start about 5.5 hours late in practice, so these aim for roughly 9:05 and 15:00.
+    - cron: "35 3 * * *"
       timezone: Europe/Berlin
-    - cron: "0 15 * * *"
+    - cron: "30 9 * * *"
       timezone: Europe/Berlin
   workflow_dispatch:       # "Run workflow" button on the Actions tab
   push:                    # republish when the page or the data is changed by hand

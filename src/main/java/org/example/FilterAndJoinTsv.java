@@ -1,6 +1,7 @@
 package org.example;
 import javax.swing.*;
 import javax.swing.table.DefaultTableModel;
+import javax.swing.table.JTableHeader;
 import javax.swing.table.TableCellRenderer;
 import javax.swing.table.TableRowSorter;
 import javax.swing.RowFilter;
@@ -42,6 +43,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ExecutorCompletionService;
+import java.util.function.Consumer;
 import java.util.regex.Matcher;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -49,6 +51,7 @@ import java.util.regex.Pattern;
 import java.util.zip.GZIPInputStream;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
+import java.awt.event.MouseMotionAdapter;
 import java.awt.Desktop;
 
 
@@ -122,8 +125,9 @@ public final class FilterAndJoinTsv extends JFrame {
     private static final double SECOND_COL2_THRESHOLD = 6.8;
     private static final double SECOND_COL3_THRESHOLD = 999.0;
 
-    private static final boolean FIRST_HAS_HEADER = false;
-    private static final boolean SECOND_HAS_HEADER = false;
+    // Both IMDb files start with a header row (tconst, titleType, ...)
+    private static final boolean FIRST_HAS_HEADER = true;
+    private static final boolean SECOND_HAS_HEADER = true;
 
     private static final Logger LOG = Logger.getLogger(FilterAndJoinTsv.class.getName());
 
@@ -227,20 +231,43 @@ public final class FilterAndJoinTsv extends JFrame {
                 }
             }
         };
-        table.setRowSorter(sorter);  // enable sorting and filtering [web:92][web:90][web:91]
+        table.setRowSorter(sorter);  // enable sorting and filtering
 
-        // NEW: HIDE COLUMN 0 (IMDb ID)
+        // Starting column widths, and a tooltip explaining each column header
+        int[] preferredWidths = {0, 280, 60, 160, 60, 70, 140, 90};
+        for (int i = 0; i < preferredWidths.length; i++) {
+            table.getColumnModel().getColumn(i).setPreferredWidth(preferredWidths[i]);
+        }
+        String[] headerTips = {
+                "IMDb ID",
+                "Primary title",
+                "Release year. Sorting also puts the newest additions first within a year",
+                "Genres",
+                "Average IMDb rating",
+                "Number of votes",
+                "Country of origin",
+                "Date this title joined the list"
+        };
+        JTableHeader header = table.getTableHeader();
+        header.addMouseMotionListener(new MouseMotionAdapter() {
+            @Override
+            public void mouseMoved(MouseEvent e) {
+                int viewColumn = header.columnAtPoint(e.getPoint());
+                header.setToolTipText(viewColumn < 0
+                        ? null
+                        : headerTips[table.convertColumnIndexToModel(viewColumn)]);
+            }
+        });
+
+        // Hide the IMDb ID column (still used for the double-click link and the highlights)
         table.getColumnModel().getColumn(0).setMinWidth(0);
         table.getColumnModel().getColumn(0).setMaxWidth(0);
         table.getColumnModel().getColumn(0).setWidth(0);
         table.getColumnModel().getColumn(0).setPreferredWidth(0);
-        table.getTableHeader().getColumnModel().getColumn(0).setWidth(0);
 
-// NEW: Make table READ-ONLY
-        table.setEnabled(true);                    // Selection works
-        table.setDefaultEditor(Object.class, null); // No editing allowed
+        table.setDefaultEditor(Object.class, null);  // read-only; selection still works
 
-        // NEW: Double-click to open IMDb page
+        // Double-click to open the IMDb page
         table.addMouseListener(new MouseAdapter() {
             @Override
             public void mouseClicked(MouseEvent e) {
@@ -265,7 +292,7 @@ public final class FilterAndJoinTsv extends JFrame {
             }
         });
 
-        JScrollPane scrollPane = new JScrollPane(table);  // scrollable table [web:96][web:99]
+        JScrollPane scrollPane = new JScrollPane(table);
 
         // Filter field
         filterField = new JTextField(20);
@@ -304,16 +331,15 @@ public final class FilterAndJoinTsv extends JFrame {
         setSize(800, 600);
         setLocationRelativeTo(null);
 
-        // NEW: Load existing data on startup
+        // Load existing data on startup
         try {
-            loadExistingDataOnStartup();  // Add this line
+            loadExistingDataOnStartup();
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
 
     }
 
-    // Add this to the constructor, right before setLocationRelativeTo(null);
     private void loadExistingDataOnStartup() throws IOException {
         Path mergedPath = dataFile(MERGED_FILE);
         if (Files.exists(mergedPath) && Files.size(mergedPath) > 0) {
@@ -387,16 +413,22 @@ public final class FilterAndJoinTsv extends JFrame {
         updateButton.setEnabled(false);
         statusLabel.setText("Updating...");
 
-        SwingWorker<UpdateResult, Void> worker = new SwingWorker<>() {  // avoid blocking EDT [web:97][web:94]
+        // Runs in the background so the window stays responsive; progress messages go to the status bar
+        SwingWorker<UpdateResult, String> worker = new SwingWorker<>() {
             private String unchangedSince;  // IMDb's Last-Modified, when the result is UNCHANGED
 
             @Override
             protected UpdateResult doInBackground() throws Exception {
-                UpdateResult result = performUpdate();
+                UpdateResult result = performUpdate(this::publish);
                 if (result == UpdateResult.UNCHANGED) {
                     unchangedSince = lastModified(loadDownloadState());
                 }
                 return result;
+            }
+
+            @Override
+            protected void process(List<String> messages) {
+                statusLabel.setText(messages.getLast());  // only the latest one matters
             }
 
             @Override
@@ -460,7 +492,14 @@ public final class FilterAndJoinTsv extends JFrame {
     // The whole update, shared by the Update button and the headless --update run:
     // download, filter, look up countries, then merge and save merged.tsv
     private static UpdateResult performUpdate() throws IOException, InterruptedException {
+        return performUpdate(_ -> { });
+    }
+
+    // As above, also reporting each step to progress (shown in the window's status bar)
+    private static UpdateResult performUpdate(Consumer<String> progress)
+            throws IOException, InterruptedException {
         logStart("Update");
+        progress.accept("Downloading IMDb files...");
         Properties state = loadDownloadState();
 
         // Step 0: download whichever files IMDb has regenerated since the last update
@@ -485,9 +524,11 @@ public final class FilterAndJoinTsv extends JFrame {
         // Steps 1–2: filter. The ratings file goes first: it is far more selective, so the much
         // larger basics file then only keeps the titles that can be in the join.
         logStart("Filter " + SECOND_GZ_FILE);
+        progress.accept("Filtering ratings...");
         Map<String, String[]> secondFiltered = filterSecondFile();
         logEnd("Filter " + SECOND_GZ_FILE + " (" + secondFiltered.size() + " rows kept)");
         logStart("Filter " + FIRST_GZ_FILE);
+        progress.accept("Filtering titles (" + secondFiltered.size() + " ratings kept)...");
         Map<String, String[]> firstFiltered = filterFirstFile(secondFiltered.keySet());
         logEnd("Filter " + FIRST_GZ_FILE + " (" + firstFiltered.size() + " rows kept)");
 
@@ -500,6 +541,7 @@ public final class FilterAndJoinTsv extends JFrame {
         Map<String, String> countries = loadPreviousColumn(MERGED_COUNTRY_COLUMN);
         joinedKeys.removeAll(countries.keySet());
         boolean countriesLoaded = true;
+        progress.accept("Looking up countries on Wikidata (" + joinedKeys.size() + ")...");
         logStart("Wikidata country lookup (" + joinedKeys.size() + " titles)");
         try {
             Map<String, String> wikidataCountries = fetchWikidataCountries(joinedKeys);
@@ -515,6 +557,7 @@ public final class FilterAndJoinTsv extends JFrame {
             Set<String> missing = new HashSet<>(joinedKeys);
             missing.removeAll(countries.keySet());
             logStart("TMDb country lookup (" + missing.size() + " titles)");
+            progress.accept("Looking up remaining countries on TMDb (" + missing.size() + ")...");
             try {
                 Map<String, String> tmdbCountries = fetchTmdbCountries(missing, tmdbToken);
                 countries.putAll(tmdbCountries);
@@ -530,6 +573,7 @@ public final class FilterAndJoinTsv extends JFrame {
 
         // Steps 3–4: merge and save
         logStart("Merge and save " + MERGED_FILE);
+        progress.accept("Saving " + MERGED_FILE + "...");
         mergeAndSave(firstFiltered, secondFiltered, countries, loadPreviousDatesAdded());
         logEnd("Merge and save " + MERGED_FILE);
 
@@ -562,7 +606,7 @@ public final class FilterAndJoinTsv extends JFrame {
 
         HttpClient client = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(30))
-                .build();  // modern HTTP client [web:62][web:81]
+                .build();
 
         HttpRequest.Builder request = HttpRequest.newBuilder()
                 .uri(URI.create(gzUrl))

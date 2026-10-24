@@ -596,29 +596,21 @@ public final class FilterAndJoinTsv extends JFrame {
         return true;
     }
 
+    // The download state file in the data directory; empty if it doesn't exist yet
     private static Properties loadDownloadState() throws IOException {
-        return loadProperties(DOWNLOAD_STATE_FILE);
+        Properties state = new Properties();
+        Path path = dataFile(DOWNLOAD_STATE_FILE);
+        if (Files.exists(path)) {
+            try (BufferedReader reader = Files.newBufferedReader(path, StandardCharsets.UTF_8)) {
+                state.load(reader);
+            }
+        }
+        return state;
     }
 
     private static void saveDownloadState(Properties state) throws IOException {
-        saveProperties(DOWNLOAD_STATE_FILE, state, "IMDb download versions - written by FilterAndJoinTsv");
-    }
-
-    // A properties file in the data directory; empty if it doesn't exist yet
-    private static Properties loadProperties(String file) throws IOException {
-        Properties properties = new Properties();
-        Path path = dataFile(file);
-        if (Files.exists(path)) {
-            try (BufferedReader reader = Files.newBufferedReader(path, StandardCharsets.UTF_8)) {
-                properties.load(reader);
-            }
-        }
-        return properties;
-    }
-
-    private static void saveProperties(String file, Properties properties, String comment) throws IOException {
-        try (BufferedWriter writer = Files.newBufferedWriter(dataFile(file), StandardCharsets.UTF_8)) {
-            properties.store(writer, comment);
+        try (BufferedWriter writer = Files.newBufferedWriter(dataFile(DOWNLOAD_STATE_FILE), StandardCharsets.UTF_8)) {
+            state.store(writer, "IMDb download versions - written by FilterAndJoinTsv");
         }
     }
 

@@ -1047,7 +1047,7 @@ public final class FilterAndJoinTsv extends JFrame {
                     String IMDB_ID = cols[0]; //
                     String title = cols[2];        // primaryTitle
                     Integer year = parseIntOrNull(cols[5]);                        // Year
-                    String genre = cols.length > 8 ? cols[8] : "";                 // Genre
+                    String genre = cols.length > 8 ? blankIfMissing(cols[8]) : "";  // Genre
                     Double rating = cols.length > 9 ? parseDoubleOrNull(cols[9]) : null;   // Rating
                     Integer voted = cols.length > 10 ? parseIntOrNull(cols[10]) : null;    // Voted
                     String country = cols.length > 11 ? blankIfMissing(cols[11]) : "";   // Country

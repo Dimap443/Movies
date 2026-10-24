@@ -67,7 +67,7 @@ The web page and the desktop app behave the same way:
 installed. Keep the whole `Movies` folder together: the exe needs its `app` and `runtime`
 folders.
 
-- On startup it shows the list it has. A `merged.tsv` placed next to `Movies.exe` is loaded if
+- On startup, it shows the list it has. A `merged.tsv` placed next to `Movies.exe` is loaded if
   it is newer than the app's own copy. Each build of the exe includes the latest `merged.tsv`.
 - **Update** runs the update described above on your PC. That takes a few minutes the first
   time, since IMDb's files are large.
@@ -85,8 +85,8 @@ mvn clean package
 
 This produces `target\dist\Movies\Movies.exe` with the current `merged.tsv` copied next to it.
 Run `git pull` first to include the latest daily update. Packaging the exe uses `jpackage` and
-Windows commands, so it must be built on Windows. Add `-Dexec.skip=true` to build only the jar
-(in `target/libs`), as the GitHub workflow does.
+Windows commands, so it must be built on Windows. Add `-Dexec.skip=true` to build only the jar (in `target/libs`), as
+the GitHub workflow does.
 
 Run from the IDE, the program keeps its data in the working directory instead of
 `%LOCALAPPDATA%\Movies`.
@@ -107,13 +107,13 @@ java --enable-preview -cp "target/libs/*" org.example.FilterAndJoinTsv --update
 
 ## Files
 
-| File | What it is |
-| --- | --- |
-| `src/main/java/org/example/FilterAndJoinTsv.java` | The desktop app and the update logic |
-| `web/index.html` | The web page; it loads `merged.tsv` from the same site |
-| `merged.tsv` | The current list, updated daily by the workflow |
-| `.github/workflows/update.yml` | The daily update and the GitHub Pages publish |
-| `pom.xml` | The Maven build, including packaging `Movies.exe` |
+| File                                              | What it is                                             |
+|---------------------------------------------------|--------------------------------------------------------|
+| `src/main/java/org/example/FilterAndJoinTsv.java` | The desktop app and the update logic                   |
+| `web/index.html`                                  | The web page; it loads `merged.tsv` from the same site |
+| `merged.tsv`                                      | The current list, updated daily by the workflow        |
+| `.github/workflows/update.yml`                    | The daily update and the GitHub Pages publish          |
+| `pom.xml`                                         | The Maven build, including packaging `Movies.exe`      |
 
 `merged.tsv` has no header row. Its columns are IMDb's `title.basics` columns (ID, type,
 title, original title, adult, year, end year, runtime, genres), then rating and votes, then

@@ -136,6 +136,7 @@ public final class FilterAndJoinTsv extends JFrame {
     }
 
     private static final Color NEW_MOVIE_COLOR = new Color(200, 255, 200);
+    private static final int YEAR_TABLE_COLUMN = 2;
     private static final int DATE_ADDED_TABLE_COLUMN = 7;  // table column holding the Date added
 
     private final transient Set<String> newMovieIds = new HashSet<>();  // IMDb ids added today
@@ -209,7 +210,18 @@ public final class FilterAndJoinTsv extends JFrame {
             }
         };
 
-        sorter = new TableRowSorter<>(tableModel);
+        sorter = new TableRowSorter<>(tableModel) {
+            // Within a year, the most recently added movies come first, so today's additions
+            // lead their year
+            @Override
+            public void toggleSortOrder(int column) {
+                super.toggleSortOrder(column);
+                if (column == YEAR_TABLE_COLUMN) {
+                    setSortKeys(List.of(getSortKeys().getFirst(),
+                            new SortKey(DATE_ADDED_TABLE_COLUMN, SortOrder.DESCENDING)));
+                }
+            }
+        };
         table.setRowSorter(sorter);  // enable sorting and filtering [web:92][web:90][web:91]
 
         // NEW: HIDE COLUMN 0 (IMDb ID)

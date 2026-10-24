@@ -234,6 +234,8 @@
       visible.sort((a, b) => {
         const c = compare(a, b, sort.key);
         const missing = a[sort.key] === null || a[sort.key] === "" || b[sort.key] === null || b[sort.key] === "";
+        // Within a year, the most recently added movies first, so today's additions lead their year
+        if (c === 0 && sort.key === "year") return compare(b, a, "added") * (a.added && b.added ? 1 : -1);
         return missing ? c : c * dir;
       });
     } else {

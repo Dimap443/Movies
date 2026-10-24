@@ -1091,11 +1091,10 @@ public final class FilterAndJoinTsv extends JFrame {
         }
     }
 
-    // Load merged.tsv into table (Movie title, year, rating, viewers)
-    // Fixed column mapping for IMDb datasets
+    // Load merged.tsv into the table. The whole file is read before the table is touched, so if
+    // reading fails the rows already shown stay as they were.
     private void loadMergedFileIntoTable() throws IOException {
-        tableModel.setRowCount(0);  // clear old data
-
+        List<Object[]> rows = new ArrayList<>();
         Path path = dataFile(FilterAndJoinTsv.MERGED_FILE);
         try (BufferedReader reader = Files.newBufferedReader(path, StandardCharsets.UTF_8)) {
             String line;
@@ -1105,7 +1104,7 @@ public final class FilterAndJoinTsv extends JFrame {
                     continue;  // too short to be a movie row
                 }
                 // In TABLE_COLUMN_NAMES order. Files from older versions may lack the last columns.
-                tableModel.addRow(new Object[]{
+                rows.add(new Object[]{
                         cols[IMDB_ID_COLUMN],
                         cols[MERGED_TITLE_COLUMN],
                         parseIntOrNull(cols[MERGED_YEAR_COLUMN]),
@@ -1115,6 +1114,11 @@ public final class FilterAndJoinTsv extends JFrame {
                         blankIfMissing(column(cols, MERGED_COUNTRY_COLUMN)),
                         blankIfMissing(column(cols, MERGED_DATE_ADDED_COLUMN))});
             }
+        }
+
+        tableModel.setRowCount(0);  // clear old data
+        for (Object[] row : rows) {
+            tableModel.addRow(row);
         }
         refreshCountryChoices();
         applyFilter();  // re-apply the current filters to the reloaded rows

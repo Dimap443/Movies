@@ -44,11 +44,12 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ExecutorCompletionService;
 import java.util.function.Consumer;
-import java.util.regex.Matcher;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.regex.Pattern;
 import java.util.zip.GZIPInputStream;
+import org.json.JSONArray;
+import org.json.JSONObject;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.event.MouseMotionAdapter;
@@ -90,9 +91,6 @@ public final class FilterAndJoinTsv extends JFrame {
     private static final String TMDB_TOKEN_FILE = "tmdb.txt";
     private static final int TMDB_THREADS = 8;          // stays well under TMDb's ~50 requests/second
     private static final int TMDB_MAX_ATTEMPTS = 4;     // retries for HTTP 429 (rate limited)
-    private static final Pattern TMDB_ORIGIN_COUNTRY = Pattern.compile("\"origin_country\":\\[(.*?)]");
-    private static final Pattern TMDB_PRODUCTION_COUNTRIES = Pattern.compile("\"production_countries\":\\[(.*?)]");
-    private static final Pattern TMDB_CODE = Pattern.compile("\"([A-Z]{2})\"");
     // Countries whose Java (CLDR) English name differs from the name Wikidata uses
     private static final Map<String, String> WIKIDATA_COUNTRY_NAMES = Map.ofEntries(
             Map.entry("BA", "Bosnia and Herzegovina"),
@@ -112,11 +110,31 @@ public final class FilterAndJoinTsv extends JFrame {
     // IMDb's marker for a missing value
     private static final String MISSING = "\\N";
 
-    private static final int COUNTRY_COLUMN = 6;
+    // Columns of the IMDb downloads used here; both files start with the IMDb ID
+    private static final int IMDB_ID_COLUMN = 0;
+    private static final int BASICS_TYPE_COLUMN = 1;      // titleType: movie, tvMovie, short, ...
+    private static final int RATINGS_AVERAGE_COLUMN = 1;  // averageRating
+    private static final int RATINGS_VOTES_COLUMN = 2;    // numVotes
 
-    // merged.tsv columns carried over from the previous build
+    // merged.tsv columns: the title.basics columns, then the ratings, country and date added.
+    // Its first column is the IMDb ID too (IMDB_ID_COLUMN).
+    private static final int MERGED_TITLE_COLUMN = 2;    // primaryTitle
+    private static final int MERGED_YEAR_COLUMN = 5;     // startYear
+    private static final int MERGED_GENRES_COLUMN = 8;
+    private static final int MERGED_RATING_COLUMN = 9;
+    private static final int MERGED_VOTES_COLUMN = 10;
     private static final int MERGED_COUNTRY_COLUMN = 11;
     private static final int MERGED_DATE_ADDED_COLUMN = 12;  // yyyy-MM-dd, when the movie joined the list
+
+    // Desktop table columns, in this order
+    private static final String[] TABLE_COLUMN_NAMES =
+            {"ID", "Title", "Year", "Genre", "Rating", "Voted", "Country", "Date added"};
+    private static final int ID_TABLE_COLUMN = 0;  // hidden
+    private static final int YEAR_TABLE_COLUMN = 2;
+    private static final int RATING_TABLE_COLUMN = 4;
+    private static final int VOTED_TABLE_COLUMN = 5;
+    private static final int COUNTRY_TABLE_COLUMN = 6;
+    private static final int DATE_ADDED_TABLE_COLUMN = 7;
 
     // Frequently selected countries, listed at the top of "Hide country" before the alphabetical rest
     private static final List<String> FREQUENT_COUNTRIES = List.of("India");
@@ -130,6 +148,11 @@ public final class FilterAndJoinTsv extends JFrame {
     private static final boolean SECOND_HAS_HEADER = true;
 
     private static final Logger LOG = Logger.getLogger(FilterAndJoinTsv.class.getName());
+
+    // Shared by the IMDb downloads and the TMDb lookups. Wikidata has its own, HTTP/1.1-only client.
+    private static final HttpClient HTTP_CLIENT = HttpClient.newBuilder()
+            .connectTimeout(Duration.ofSeconds(30))
+            .build();
 
     // Progress messages go to standard output (java.util.logging's console handler uses stderr)
     private static void log(String message) {
@@ -145,8 +168,6 @@ public final class FilterAndJoinTsv extends JFrame {
     }
 
     private static final Color NEW_MOVIE_COLOR = new Color(200, 255, 200);
-    private static final int YEAR_TABLE_COLUMN = 2;
-    private static final int DATE_ADDED_TABLE_COLUMN = 7;  // table column holding the Date added
 
     private final transient Set<String> newMovieIds = new HashSet<>();  // IMDb ids added today
     private final DefaultTableModel tableModel;
@@ -186,15 +207,13 @@ public final class FilterAndJoinTsv extends JFrame {
         Files.createDirectories(DATA_DIR);
         importMergedFileBesideExe();
 
-        // Table model: Movie title, year, genre, rating, viewers
-        String[] columnNames = {"ID", "Title", "Year", "Genre", "Rating", "Voted", "Country", "Date added"};
-        tableModel = new DefaultTableModel(columnNames, 0) {
+        tableModel = new DefaultTableModel(TABLE_COLUMN_NAMES, 0) {
             // Report numeric types so the sorter compares numbers, not strings ("10000" < "9999")
             @Override
             public Class<?> getColumnClass(int column) {
                 return switch (column) {
-                    case 2, 5 -> Integer.class;  // Year, Voted
-                    case 4 -> Double.class;      // Rating
+                    case YEAR_TABLE_COLUMN, VOTED_TABLE_COLUMN -> Integer.class;
+                    case RATING_TABLE_COLUMN -> Double.class;
                     default -> String.class;
                 };
             }
@@ -212,7 +231,7 @@ public final class FilterAndJoinTsv extends JFrame {
             public Component prepareRenderer(TableCellRenderer renderer, int row, int column) {
                 Component c = super.prepareRenderer(renderer, row, column);
                 if (!isRowSelected(row)) {
-                    String id = (String) tableModel.getValueAt(convertRowIndexToModel(row), 0);
+                    String id = (String) tableModel.getValueAt(convertRowIndexToModel(row), ID_TABLE_COLUMN);
                     c.setBackground(newMovieIds.contains(id) ? NEW_MOVIE_COLOR : getBackground());
                 }
                 return c;
@@ -260,10 +279,10 @@ public final class FilterAndJoinTsv extends JFrame {
         });
 
         // Hide the IMDb ID column (still used for the double-click link and the highlights)
-        table.getColumnModel().getColumn(0).setMinWidth(0);
-        table.getColumnModel().getColumn(0).setMaxWidth(0);
-        table.getColumnModel().getColumn(0).setWidth(0);
-        table.getColumnModel().getColumn(0).setPreferredWidth(0);
+        table.getColumnModel().getColumn(ID_TABLE_COLUMN).setMinWidth(0);
+        table.getColumnModel().getColumn(ID_TABLE_COLUMN).setMaxWidth(0);
+        table.getColumnModel().getColumn(ID_TABLE_COLUMN).setWidth(0);
+        table.getColumnModel().getColumn(ID_TABLE_COLUMN).setPreferredWidth(0);
 
         table.setDefaultEditor(Object.class, null);  // read-only; selection still works
 
@@ -275,7 +294,7 @@ public final class FilterAndJoinTsv extends JFrame {
                     int row = table.rowAtPoint(e.getPoint());
                     if (row >= 0) {
                         int modelRow = table.convertRowIndexToModel(row);  // Account for sorting/filtering
-                        String imdbId = (String) tableModel.getValueAt(modelRow, 0);  // First column (index 0)
+                        String imdbId = (String) tableModel.getValueAt(modelRow, ID_TABLE_COLUMN);
 
                         if (imdbId != null && !imdbId.isEmpty()) {
                             try {
@@ -377,7 +396,7 @@ public final class FilterAndJoinTsv extends JFrame {
             filters.add(new RowFilter<>() {
                 @Override
                 public boolean include(Entry<? extends DefaultTableModel, ? extends Integer> entry) {
-                    String countries = entry.getStringValue(COUNTRY_COLUMN);
+                    String countries = entry.getStringValue(COUNTRY_TABLE_COLUMN);
                     return !countries.isEmpty() && !Arrays.asList(countries.split(",")).contains(hiddenCountry);
                 }
             });
@@ -390,7 +409,7 @@ public final class FilterAndJoinTsv extends JFrame {
     private void refreshCountryChoices() {
         Set<String> countries = new TreeSet<>();
         for (int row = 0; row < tableModel.getRowCount(); row++) {
-            String value = (String) tableModel.getValueAt(row, COUNTRY_COLUMN);
+            String value = (String) tableModel.getValueAt(row, COUNTRY_TABLE_COLUMN);
             if (value != null && !value.isEmpty()) {
                 countries.addAll(Arrays.asList(value.split(",")));
             }
@@ -470,13 +489,13 @@ public final class FilterAndJoinTsv extends JFrame {
         newMovieIds.clear();
         for (int row = 0; row < tableModel.getRowCount(); row++) {
             if (today.equals(tableModel.getValueAt(row, DATE_ADDED_TABLE_COLUMN))) {
-                newMovieIds.add((String) tableModel.getValueAt(row, 0));
+                newMovieIds.add((String) tableModel.getValueAt(row, ID_TABLE_COLUMN));
             }
         }
 
         int top = 0;
         for (int row = 0; row < tableModel.getRowCount(); row++) {
-            if (newMovieIds.contains((String) tableModel.getValueAt(row, 0))) {
+            if (newMovieIds.contains((String) tableModel.getValueAt(row, ID_TABLE_COLUMN))) {
                 tableModel.moveRow(row, row, top++);
             }
         }
@@ -604,10 +623,6 @@ public final class FilterAndJoinTsv extends JFrame {
         Path outputPath = dataFile(outputFile);
         Path partPath = dataFile(outputFile + ".part");  // never leave a half-written file in place
 
-        HttpClient client = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(30))
-                .build();
-
         HttpRequest.Builder request = HttpRequest.newBuilder()
                 .uri(URI.create(gzUrl))
                 .timeout(Duration.ofMinutes(5));
@@ -623,7 +638,7 @@ public final class FilterAndJoinTsv extends JFrame {
         }
 
         try {
-            HttpResponse<Path> response = client.send(request.build(), HttpResponse.BodyHandlers.ofFile(partPath));
+            HttpResponse<Path> response = HTTP_CLIENT.send(request.build(), HttpResponse.BodyHandlers.ofFile(partPath));
             if (response.statusCode() == 304) {
                 return false;
             }
@@ -719,9 +734,9 @@ public final class FilterAndJoinTsv extends JFrame {
                 firstLine = false;
 
                 String[] columns = line.split("\t", -1);
-                if (columns.length > 1 && columns[1].contains("movie") && eligibleIds.contains(columns[0])) {
-                    String key = columns[0];
-                    data.put(key, columns);
+                if (columns.length > BASICS_TYPE_COLUMN && columns[BASICS_TYPE_COLUMN].contains("movie")
+                        && eligibleIds.contains(columns[IMDB_ID_COLUMN])) {
+                    data.put(columns[IMDB_ID_COLUMN], columns);
                 }
             }
         }
@@ -743,11 +758,10 @@ public final class FilterAndJoinTsv extends JFrame {
                 firstLine = false;
 
                 String[] columns = line.split("\t", -1);
-                if (columns.length > 2 &&
-                        isNumericGreaterThanOrEqual(columns[1], SECOND_COL2_THRESHOLD) &&
-                        isNumericGreaterThanOrEqual(columns[2], SECOND_COL3_THRESHOLD)) {
-                    String key = columns[0];
-                    data.put(key, columns);
+                if (columns.length > RATINGS_VOTES_COLUMN &&
+                        isNumericGreaterThanOrEqual(columns[RATINGS_AVERAGE_COLUMN], SECOND_COL2_THRESHOLD) &&
+                        isNumericGreaterThanOrEqual(columns[RATINGS_VOTES_COLUMN], SECOND_COL3_THRESHOLD)) {
+                    data.put(columns[IMDB_ID_COLUMN], columns);
                 }
             }
         }
@@ -867,9 +881,6 @@ public final class FilterAndJoinTsv extends JFrame {
     private static Map<String, String> fetchTmdbCountries(Set<String> keys, String token)
             throws IOException, InterruptedException {
         Map<String, String> data = new HashMap<>();
-        HttpClient client = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(30))
-                .build();
 
         // A few lookups per thread are queued at a time, refilled as each one finishes, instead of
         // one task per title up front. close() waits for running lookups; on failure shutdownNow()
@@ -883,7 +894,7 @@ public final class FilterAndJoinTsv extends JFrame {
                     while (inFlight < TMDB_THREADS * 4 && ids.hasNext()) {
                         String id = ids.next();
                         // The value may be null (no country known); Map.entry() doesn't allow that
-                        lookups.submit(() -> new AbstractMap.SimpleEntry<>(id, fetchTmdbCountry(client, token, id)));
+                        lookups.submit(() -> new AbstractMap.SimpleEntry<>(id, fetchTmdbCountry(token, id)));
                         inFlight++;
                     }
                     Map.Entry<String, String> result = lookups.take().get();
@@ -909,7 +920,7 @@ public final class FilterAndJoinTsv extends JFrame {
     // One TMDb lookup; null when TMDb has no such movie or no country for it.
     // The sleeps in the retry loop are a bounded back-off after a failed attempt, not busy-waiting.
     @SuppressWarnings("BusyWait")
-    private static String fetchTmdbCountry(HttpClient client, String token, String imdbId)
+    private static String fetchTmdbCountry(String token, String imdbId)
             throws IOException, InterruptedException {
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(TMDB_MOVIE_URL + imdbId))
@@ -921,7 +932,7 @@ public final class FilterAndJoinTsv extends JFrame {
         for (int attempt = 1; ; attempt++) {
             HttpResponse<String> response;
             try {
-                response = client.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+                response = HTTP_CLIENT.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
             } catch (IOException e) {
                 if (attempt == TMDB_MAX_ATTEMPTS) {
                     throw e;
@@ -957,22 +968,32 @@ public final class FilterAndJoinTsv extends JFrame {
     }
 
     // Prefers "origin_country" (["IN"]), falls back to "production_countries" ([{"iso_3166_1":"IN",...}]).
-    // Production companies also have an "origin_country", but as a string, so the [ ] patterns skip it.
+    // Only the movie's own top-level fields are read, not those of its production companies.
     private static String parseTmdbCountries(String json) {
+        JSONObject movie = new JSONObject(json);
         Set<String> names = new TreeSet<>();
-        for (Pattern field : new Pattern[]{TMDB_ORIGIN_COUNTRY, TMDB_PRODUCTION_COUNTRIES}) {
-            Matcher array = field.matcher(json);
-            if (array.find()) {
-                Matcher code = TMDB_CODE.matcher(array.group(1));
-                while (code.find()) {
-                    names.add(countryName(code.group(1)));
-                }
+        JSONArray origin = movie.optJSONArray("origin_country");
+        if (origin != null) {
+            for (int i = 0; i < origin.length(); i++) {
+                addCountry(names, origin.optString(i));
             }
-            if (!names.isEmpty()) {
-                break;
+        }
+        JSONArray production = movie.optJSONArray("production_countries");
+        if (names.isEmpty() && production != null) {
+            for (int i = 0; i < production.length(); i++) {
+                JSONObject country = production.optJSONObject(i);
+                if (country != null) {
+                    addCountry(names, country.optString("iso_3166_1"));
+                }
             }
         }
         return names.isEmpty() ? null : String.join(",", names);
+    }
+
+    private static void addCountry(Set<String> names, String isoCode) {
+        if (isoCode.length() == 2) {  // skips blanks
+            names.add(countryName(isoCode));
+        }
     }
 
     // ISO code to the English name Wikidata uses, so both sources agree: "IN" -> India, "TR" -> Turkey
@@ -993,7 +1014,7 @@ public final class FilterAndJoinTsv extends JFrame {
         if (!Files.exists(dataFile(MERGED_FILE))) {
             return null;
         }
-        Map<String, String> dates = loadPreviousColumn(0);  // every listed movie (ID -> ID)
+        Map<String, String> dates = loadPreviousColumn(IMDB_ID_COLUMN);  // every listed movie (ID -> ID)
         dates.replaceAll((_, _) -> MISSING);
         dates.putAll(loadPreviousColumn(MERGED_DATE_ADDED_COLUMN));
         return dates;
@@ -1012,7 +1033,7 @@ public final class FilterAndJoinTsv extends JFrame {
             while ((line = reader.readLine()) != null) {
                 String[] cols = line.split("\t", -1);
                 if (cols.length > column && !cols[column].isEmpty() && !MISSING.equals(cols[column])) {
-                    known.put(cols[0], cols[column]);
+                    known.put(cols[IMDB_ID_COLUMN], cols[column]);
                 }
             }
         } catch (IOException e) {
@@ -1080,29 +1101,28 @@ public final class FilterAndJoinTsv extends JFrame {
             String line;
             while ((line = reader.readLine()) != null) {
                 String[] cols = line.split("\t", -1);
-
-                // IMDb mapping from merged.tsv:
-                // cols[0] = tConst (key)
-                // cols[2] = primaryTitle (movie title)
-
-                // ... ratings data appended later ...
-
-                if (cols.length > 5) {  // Ensure we have enough columns (cols[5] is read below)
-                    String IMDB_ID = cols[0]; //
-                    String title = cols[2];        // primaryTitle
-                    Integer year = parseIntOrNull(cols[5]);                        // Year
-                    String genre = cols.length > 8 ? blankIfMissing(cols[8]) : "";  // Genre
-                    Double rating = cols.length > 9 ? parseDoubleOrNull(cols[9]) : null;   // Rating
-                    Integer voted = cols.length > 10 ? parseIntOrNull(cols[10]) : null;    // Voted
-                    String country = cols.length > 11 ? blankIfMissing(cols[11]) : "";   // Country
-                    String dateAdded = cols.length > 12 ? blankIfMissing(cols[12]) : "";  // Date added
-
-                    tableModel.addRow(new Object[]{IMDB_ID, title, year, genre, rating, voted, country, dateAdded});
+                if (cols.length <= MERGED_YEAR_COLUMN) {
+                    continue;  // too short to be a movie row
                 }
+                // In TABLE_COLUMN_NAMES order. Files from older versions may lack the last columns.
+                tableModel.addRow(new Object[]{
+                        cols[IMDB_ID_COLUMN],
+                        cols[MERGED_TITLE_COLUMN],
+                        parseIntOrNull(cols[MERGED_YEAR_COLUMN]),
+                        blankIfMissing(column(cols, MERGED_GENRES_COLUMN)),
+                        parseDoubleOrNull(column(cols, MERGED_RATING_COLUMN)),
+                        parseIntOrNull(column(cols, MERGED_VOTES_COLUMN)),
+                        blankIfMissing(column(cols, MERGED_COUNTRY_COLUMN)),
+                        blankIfMissing(column(cols, MERGED_DATE_ADDED_COLUMN))});
             }
         }
         refreshCountryChoices();
         applyFilter();  // re-apply the current filters to the reloaded rows
+    }
+
+    // One column of a split line; MISSING if the line is too short to have it
+    private static String column(String[] cols, int index) {
+        return index < cols.length ? cols[index] : MISSING;
     }
 
     private static String blankIfMissing(String value) {

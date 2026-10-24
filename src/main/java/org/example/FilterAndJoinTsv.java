@@ -64,8 +64,6 @@ public final class FilterAndJoinTsv extends JFrame {
     // Per downloaded file: the server's ETag and Last-Modified (sent back so an unchanged file
     // answers 304 with no body), and the version merged.tsv was last completely built from
     private static final String DOWNLOAD_STATE_FILE = "downloads.properties";
-    // The movies seen so far, so new ones stay highlighted for the rest of the day
-    private static final String SEEN_STATE_FILE = "seen.properties";
     // The packaged .exe (jpackage sets jpackage.app-path) keeps its files in %LOCALAPPDATA%\Movies,
     // since its install folder may not be writable; run from the IDE they stay in the working directory
     private static final Path DATA_DIR = System.getProperty("jpackage.app-path") == null
@@ -138,8 +136,9 @@ public final class FilterAndJoinTsv extends JFrame {
     }
 
     private static final Color NEW_MOVIE_COLOR = new Color(200, 255, 200);
+    private static final int DATE_ADDED_TABLE_COLUMN = 7;  // table column holding the Date added
 
-    private final transient Set<String> newMovieIds = new HashSet<>();  // IMDb ids not seen before today
+    private final transient Set<String> newMovieIds = new HashSet<>();  // IMDb ids added today
     private final DefaultTableModel tableModel;
     private final JTable table;
     private final transient TableRowSorter<DefaultTableModel> sorter;
@@ -414,44 +413,15 @@ public final class FilterAndJoinTsv extends JFrame {
         worker.execute();
     }
 
-    // Like the web page: movies not seen before today's first load are highlighted for the rest of
-    // the day, across restarts too (none the very first time). They are moved to the top, and any
-    // column sort is dropped so they stay there.
+    // Like the web page: movies whose Date added is today are highlighted for the whole of that day,
+    // however often or late the app is opened. They are moved to the top, and any column sort is
+    // dropped so they stay there.
     private void markNewMovies() {
-        List<String> ids = new ArrayList<>();
-        for (int row = 0; row < tableModel.getRowCount(); row++) {
-            ids.add((String) tableModel.getValueAt(row, 0));
-        }
-        newMovieIds.clear();
-        if (ids.isEmpty()) {
-            return;  // an empty merged.tsv must not become the list of seen movies
-        }
-        String current = String.join(" ", ids);
         String today = LocalDate.now().toString();
-
-        Properties seen = new Properties();
-        try {
-            seen = loadProperties(SEEN_STATE_FILE);
-        } catch (IOException e) {
-            LOG.log(Level.WARNING, "Cannot read " + SEEN_STATE_FILE, e);
-        }
-        String baseline = seen.getProperty("baseIds");
-        if (baseline == null || !today.equals(seen.getProperty("baseDay"))) {
-            baseline = seen.getProperty("seenIds", current);  // the movies as of the last load before today
-            seen.setProperty("baseIds", baseline);
-            seen.setProperty("baseDay", today);
-        }
-        seen.setProperty("seenIds", current);
-        try {
-            saveProperties(SEEN_STATE_FILE, seen, "Movies seen so far - written by FilterAndJoinTsv");
-        } catch (IOException e) {
-            LOG.log(Level.WARNING, "Cannot write " + SEEN_STATE_FILE, e);
-        }
-
-        Set<String> known = new HashSet<>(Arrays.asList(baseline.split(" ")));
-        for (String id : ids) {
-            if (!known.contains(id)) {
-                newMovieIds.add(id);
+        newMovieIds.clear();
+        for (int row = 0; row < tableModel.getRowCount(); row++) {
+            if (today.equals(tableModel.getValueAt(row, DATE_ADDED_TABLE_COLUMN))) {
+                newMovieIds.add((String) tableModel.getValueAt(row, 0));
             }
         }
 

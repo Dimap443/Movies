@@ -108,6 +108,24 @@
                             </arguments>
                         </configuration>
                     </execution>
+                    <!-- Ships the current merged.tsv next to the exe, which loads it on startup -->
+                    <execution>
+                        <id>copy-merged-tsv</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>exec</goal>
+                        </goals>
+                        <configuration>
+                            <executable>cmd</executable>
+                            <arguments>
+                                <argument>/c</argument>
+                                <argument>copy</argument>
+                                <argument>/Y</argument>
+                                <argument>${project.basedir}\merged.tsv</argument>
+                                <argument>${project.build.directory}\dist\Movies\</argument>
+                            </arguments>
+                        </configuration>
+                    </execution>
                 </executions>
             </plugin>
         </plugins>

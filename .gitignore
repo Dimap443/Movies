@@ -43,7 +43,6 @@ second.tsv
 *.tsv.gz
 *.tsv.gz.part
 downloads.properties
-seen.properties
 
 ### TMDb API token (local only, never commit)
 tmdb.txt

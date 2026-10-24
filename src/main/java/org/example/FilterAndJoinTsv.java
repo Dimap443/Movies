@@ -18,27 +18,30 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.time.Duration;
 import java.time.LocalDate;
+import java.util.AbstractMap;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 import java.util.TreeSet;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CompletionService;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
+import java.util.concurrent.ExecutorCompletionService;
 import java.util.regex.Matcher;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -64,6 +67,8 @@ public final class FilterAndJoinTsv extends JFrame {
     // Per downloaded file: the server's ETag and Last-Modified (sent back so an unchanged file
     // answers 304 with no body), and the version merged.tsv was last completely built from
     private static final String DOWNLOAD_STATE_FILE = "downloads.properties";
+    // In the download state: whether that complete build included the TMDb country lookup
+    private static final String TMDB_MERGED_KEY = "tmdb.merged";
     // The packaged .exe (jpackage sets jpackage.app-path) keeps its files in %LOCALAPPDATA%\Movies,
     // since its install folder may not be writable; run from the IDE they stay in the working directory
     private static final Path DATA_DIR = System.getProperty("jpackage.app-path") == null
@@ -467,19 +472,24 @@ public final class FilterAndJoinTsv extends JFrame {
         logEnd("Download " + SECOND_GZ_URL + (secondChanged ? "" : " (unchanged, skipped)"));
         saveDownloadState(state);
 
-        // Nothing to redo if merged.tsv was already completely built from these exact files
-        if (isMergedUpToDate(state)) {
+        // Nothing to redo if merged.tsv was already completely built from these exact files,
+        // unless a TMDb token has appeared since: it can fill in countries Wikidata lacked
+        String tmdbToken = loadTmdbToken();
+        boolean tmdbNewlyAvailable = tmdbToken != null
+                && !Boolean.parseBoolean(state.getProperty(TMDB_MERGED_KEY));
+        if (isMergedUpToDate(state) && !tmdbNewlyAvailable) {
             logEnd("Update (IMDb data unchanged since " + lastModified(state) + ")");
             return UpdateResult.UNCHANGED;
         }
 
-        // Steps 1–2: filter
-        logStart("Filter " + FIRST_GZ_FILE);
-        Map<String, String[]> firstFiltered = filterFirstFile();
-        logEnd("Filter " + FIRST_GZ_FILE + " (" + firstFiltered.size() + " rows kept)");
+        // Steps 1–2: filter. The ratings file goes first: it is far more selective, so the much
+        // larger basics file then only keeps the titles that can be in the join.
         logStart("Filter " + SECOND_GZ_FILE);
         Map<String, String[]> secondFiltered = filterSecondFile();
         logEnd("Filter " + SECOND_GZ_FILE + " (" + secondFiltered.size() + " rows kept)");
+        logStart("Filter " + FIRST_GZ_FILE);
+        Map<String, String[]> firstFiltered = filterFirstFile(secondFiltered.keySet());
+        logEnd("Filter " + FIRST_GZ_FILE + " (" + firstFiltered.size() + " rows kept)");
 
         // Step 2b: country of origin, only for titles that survive the join: Wikidata first,
         // then TMDb for the titles Wikidata doesn't know.
@@ -501,7 +511,6 @@ public final class FilterAndJoinTsv extends JFrame {
             LOG.log(Level.WARNING, "Wikidata country lookup failed", e);
         }
 
-        String tmdbToken = loadTmdbToken();
         if (tmdbToken != null) {
             Set<String> missing = new HashSet<>(joinedKeys);
             missing.removeAll(countries.keySet());
@@ -530,6 +539,7 @@ public final class FilterAndJoinTsv extends JFrame {
             for (String file : List.of(FIRST_GZ_FILE, SECOND_GZ_FILE)) {
                 state.setProperty(file + ".merged", fileVersion(state, file));
             }
+            state.setProperty(TMDB_MERGED_KEY, Boolean.toString(tmdbToken != null));
             saveDownloadState(state);
         }
         logEnd("Update");
@@ -576,7 +586,7 @@ public final class FilterAndJoinTsv extends JFrame {
             if (response.statusCode() != 200) {
                 throw new IOException("HTTP " + response.statusCode() + " downloading " + gzUrl);
             }
-            Files.move(partPath, outputPath, StandardCopyOption.REPLACE_EXISTING);
+            replaceAtomically(partPath, outputPath);
 
             for (String header : List.of("ETag", "Last-Modified")) {
                 String key = outputFile + (header.equals("ETag") ? ".etag" : ".lastModified");
@@ -621,8 +631,23 @@ public final class FilterAndJoinTsv extends JFrame {
     }
 
     private static void saveDownloadState(Properties state) throws IOException {
-        try (BufferedWriter writer = Files.newBufferedWriter(dataFile(DOWNLOAD_STATE_FILE), StandardCharsets.UTF_8)) {
-            state.store(writer, "IMDb download versions - written by FilterAndJoinTsv");
+        Path partPath = dataFile(DOWNLOAD_STATE_FILE + ".part");
+        try {
+            try (BufferedWriter writer = Files.newBufferedWriter(partPath, StandardCharsets.UTF_8)) {
+                state.store(writer, "IMDb download versions - written by FilterAndJoinTsv");
+            }
+            replaceAtomically(partPath, dataFile(DOWNLOAD_STATE_FILE));
+        } finally {
+            Files.deleteIfExists(partPath);
+        }
+    }
+
+    // Swap a completely written file into place, so a crash never leaves a half-written target
+    private static void replaceAtomically(Path source, Path target) throws IOException {
+        try {
+            Files.move(source, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+        } catch (AtomicMoveNotSupportedException e) {
+            Files.move(source, target, StandardCopyOption.REPLACE_EXISTING);
         }
     }
 
@@ -635,8 +660,8 @@ public final class FilterAndJoinTsv extends JFrame {
     }
 
 
-    // Step 1: first file filter – column 2 contains "movie"
-    private static Map<String, String[]> filterFirstFile() throws IOException {
+    // Step 1: first file filter – column 2 contains "movie", for titles in eligibleIds only
+    private static Map<String, String[]> filterFirstFile(Set<String> eligibleIds) throws IOException {
         Map<String, String[]> data = new HashMap<>();
         try (BufferedReader reader = openGzip(FIRST_GZ_FILE)) {
             String line;
@@ -650,7 +675,7 @@ public final class FilterAndJoinTsv extends JFrame {
                 firstLine = false;
 
                 String[] columns = line.split("\t", -1);
-                if (columns.length > 1 && columns[1].contains("movie")) {
+                if (columns.length > 1 && columns[1].contains("movie") && eligibleIds.contains(columns[0])) {
                     String key = columns[0];
                     data.put(key, columns);
                 }
@@ -797,26 +822,31 @@ public final class FilterAndJoinTsv extends JFrame {
     // Result per key: comma-separated English country names; keys TMDb doesn't know are absent.
     private static Map<String, String> fetchTmdbCountries(Set<String> keys, String token)
             throws IOException, InterruptedException {
-        Map<String, String> data = new ConcurrentHashMap<>();
+        Map<String, String> data = new HashMap<>();
         HttpClient client = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(30))
                 .build();
 
-        // close() waits for running lookups; on failure shutdownNow() interrupts them first
+        // A few lookups per thread are queued at a time, refilled as each one finishes, instead of
+        // one task per title up front. close() waits for running lookups; on failure shutdownNow()
+        // interrupts them first.
         try (ExecutorService pool = Executors.newFixedThreadPool(TMDB_THREADS)) {
-            List<Future<?>> futures = new ArrayList<>();
-            for (String id : keys) {
-                futures.add(pool.submit(() -> {
-                    String countries = fetchTmdbCountry(client, token, id);
-                    if (countries != null) {
-                        data.put(id, countries);
-                    }
-                    return null;
-                }));
-            }
+            CompletionService<Map.Entry<String, String>> lookups = new ExecutorCompletionService<>(pool);
+            Iterator<String> ids = keys.iterator();
+            int inFlight = 0;
             try {
-                for (Future<?> future : futures) {
-                    future.get();
+                while (inFlight > 0 || ids.hasNext()) {
+                    while (inFlight < TMDB_THREADS * 4 && ids.hasNext()) {
+                        String id = ids.next();
+                        // The value may be null (no country known); Map.entry() doesn't allow that
+                        lookups.submit(() -> new AbstractMap.SimpleEntry<>(id, fetchTmdbCountry(client, token, id)));
+                        inFlight++;
+                    }
+                    Map.Entry<String, String> result = lookups.take().get();
+                    inFlight--;
+                    if (result.getValue() != null) {
+                        data.put(result.getKey(), result.getValue());
+                    }
                 }
             } catch (ExecutionException e) {
                 pool.shutdownNow();
@@ -833,7 +863,7 @@ public final class FilterAndJoinTsv extends JFrame {
     }
 
     // One TMDb lookup; null when TMDb has no such movie or no country for it.
-    // The sleep in the retry loop is a bounded back-off after HTTP 429, not busy-waiting.
+    // The sleeps in the retry loop are a bounded back-off after a failed attempt, not busy-waiting.
     @SuppressWarnings("BusyWait")
     private static String fetchTmdbCountry(HttpClient client, String token, String imdbId)
             throws IOException, InterruptedException {
@@ -845,19 +875,40 @@ public final class FilterAndJoinTsv extends JFrame {
                 .build();
 
         for (int attempt = 1; ; attempt++) {
-            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+            HttpResponse<String> response;
+            try {
+                response = client.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+            } catch (IOException e) {
+                if (attempt == TMDB_MAX_ATTEMPTS) {
+                    throw e;
+                }
+                Thread.sleep(1000L * attempt);  // e.g. a dropped connection: back off and retry
+                continue;
+            }
             int status = response.statusCode();
             if (status == 404) {
                 return null;
             }
-            if (status == 429 && attempt < TMDB_MAX_ATTEMPTS) {
-                Thread.sleep(1000L * attempt);  // rate limited: back off and retry
-                continue;
+            if (status == 200) {
+                return parseTmdbCountries(response.body());
             }
-            if (status != 200) {
+            if ((status != 429 && status < 500) || attempt == TMDB_MAX_ATTEMPTS) {
                 throw new IOException("TMDb lookup of " + imdbId + " failed: HTTP " + status);
             }
-            return parseTmdbCountries(response.body());
+            // Rate limited or a server error: wait as long as TMDb asks (Retry-After, in seconds,
+            // capped at 30), else a little longer each attempt
+            long delaySeconds = response.headers().firstValue("Retry-After")
+                    .map(FilterAndJoinTsv::parseRetryAfter)
+                    .orElse((long) attempt);
+            Thread.sleep(1000L * delaySeconds);
+        }
+    }
+
+    private static long parseRetryAfter(String value) {
+        try {
+            return Math.clamp(Long.parseLong(value.trim()), 1L, 30L);
+        } catch (NumberFormatException e) {
+            return 1L;  // an HTTP date instead of seconds
         }
     }
 
@@ -933,8 +984,9 @@ public final class FilterAndJoinTsv extends JFrame {
                                      Map<String, String> datesAdded) throws IOException {
         String today = LocalDate.now().toString();
         Path outputPath = dataFile(FilterAndJoinTsv.MERGED_FILE);
+        Path partPath = dataFile(FilterAndJoinTsv.MERGED_FILE + ".part");
 
-        try (BufferedWriter writer = Files.newBufferedWriter(outputPath, StandardCharsets.UTF_8)) {
+        try (BufferedWriter writer = Files.newBufferedWriter(partPath, StandardCharsets.UTF_8)) {
             for (Map.Entry<String, String[]> entry : firstData.entrySet()) {
                 String key = entry.getKey();
                 String[] firstCols = entry.getValue();
@@ -958,7 +1010,11 @@ public final class FilterAndJoinTsv extends JFrame {
                     writer.newLine();
                 }
             }
+        } catch (IOException | RuntimeException e) {
+            Files.deleteIfExists(partPath);  // the previous merged.tsv stays in place
+            throw e;
         }
+        replaceAtomically(partPath, outputPath);
     }
 
     private static boolean isNumericGreaterThanOrEqual(String value, double threshold) {

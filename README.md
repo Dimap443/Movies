@@ -10,7 +10,7 @@ comes from. It is updated automatically every day and can be browsed two ways:
 
 A title is on the list when, in IMDb's data:
 
-- its type contains "movie" (feature films and TV movies), and
+- its type is "movie" (feature films; TV movies, shorts and series are left out), and
 - it is rated **6.8 or higher** by **at least 999 voters**.
 
 Each movie shows its title, year, genre, rating, number of votes, country and the date it was
@@ -25,15 +25,17 @@ The update runs on GitHub every day, and also when you press **Update** in the d
    [IMDb's datasets](https://datasets.imdbws.com/). A file is downloaded only if IMDb has
    changed it since the last update. If neither file changed and the last build was complete,
    the update stops here.
-2. **Filter.** It keeps the movies from the basics file and the titles with a rating of 6.8+
-   and 999+ votes from the ratings file. Only titles in both lists go any further.
+2. **Filter.** It keeps the titles with a rating of 6.8+ and 999+ votes from the ratings file,
+   then the movies among them from the basics file.
 3. **Look up countries.** Countries already known from the previous list are reused. The
    others are looked up on [Wikidata](https://www.wikidata.org/) by IMDb ID first, then on
    [TMDb](https://www.themoviedb.org/) for titles Wikidata doesn't know. The TMDb step needs an
-   API token (see [Configuration](#configuration)) and is skipped without one. If a lookup
-   fails, those countries stay blank and the next update tries again.
+   API token (see [Configuration](#configuration)) and is skipped without one; once a token is
+   added, the next update runs even if IMDb hasn't changed. If a lookup fails, those countries
+   stay blank and the next update tries again.
 4. **Save.** It writes `merged.tsv`. A movie keeps its original *Date added*. A movie new to
-   the list gets today's date.
+   the list gets today's date. Files are written in full before they replace the old ones, so
+   an interrupted update never leaves a half-written file.
 
 ### On GitHub
 
@@ -72,7 +74,7 @@ folders.
 - **Update** runs the update described above on your PC. That takes a few minutes the first
   time, since IMDb's files are large.
 - The app keeps its data in `%LOCALAPPDATA%\Movies`: `merged.tsv`, the downloaded IMDb files,
-  and `downloads.properties`, which records which versions were downloaded.
+  and `downloads.properties`, a record of the downloaded versions.
 
 ## Building
 

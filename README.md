@@ -71,6 +71,9 @@ folders.
 
 - On startup, it shows the list it has. A `merged.tsv` placed next to `Movies.exe` is loaded if
   it is newer than the app's own copy. Each build of the exe includes the latest `merged.tsv`.
+- It then checks the web site in the background: if the site's `merged.tsv` was published
+  after the app's copy was written, the app downloads it and shows it. **Update** is disabled
+  until this check finishes.
 - **Update** runs the update described above on your PC. That takes a few minutes the first
   time, since IMDb's files are large.
 - The app keeps its data in `%LOCALAPPDATA%\Movies`: `merged.tsv`, the downloaded IMDb files,

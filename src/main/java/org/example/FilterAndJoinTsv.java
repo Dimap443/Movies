@@ -24,8 +24,13 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
+import java.nio.file.attribute.FileTime;
 import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.AbstractMap;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -68,6 +73,12 @@ public final class FilterAndJoinTsv extends JFrame {
     private static final String FIRST_GZ_FILE = "title.basics.tsv.gz";
     private static final String SECOND_GZ_FILE = "title.ratings.tsv.gz";
     private static final String MERGED_FILE = "merged.tsv";
+    // The list the GitHub workflow publishes. The app fetches it on startup when it is newer
+    // than the local merged.tsv.
+    private static final String SITE_MERGED_URL = "https://dimap443.github.io/Movies/" + MERGED_FILE;
+    // HTTP dates (Last-Modified, If-Modified-Since): "Sun, 25 Oct 2026 13:17:02 GMT"
+    private static final DateTimeFormatter HTTP_DATE =
+            DateTimeFormatter.ofPattern("EEE, dd MMM yyyy HH:mm:ss 'GMT'", Locale.ENGLISH).withZone(ZoneOffset.UTC);
     // Per downloaded file: the server's ETag and Last-Modified (sent back so an unchanged file
     // answers 304 with no body), and the version merged.tsv was last completely built from
     private static final String DOWNLOAD_STATE_FILE = "downloads.properties";
@@ -356,7 +367,45 @@ public final class FilterAndJoinTsv extends JFrame {
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
+        loadSiteMergedIfNewer();
+    }
 
+    // In the background, so the window opens with the local list right away: download the web
+    // site's list if it is newer, then show it. Update stays disabled meanwhile, since both write
+    // merged.tsv. A failed check only leaves the local list in place.
+    private void loadSiteMergedIfNewer() {
+        updateButton.setEnabled(false);
+        String localStatus = statusLabel.getText();
+        statusLabel.setText("Checking the web site for a newer list...");
+
+        new SwingWorker<Boolean, Void>() {
+            @Override
+            protected Boolean doInBackground() throws Exception {
+                return downloadSiteMergedIfNewer();
+            }
+
+            @Override
+            protected void done() {
+                try {
+                    if (!get()) {  // rethrow exceptions
+                        statusLabel.setText(localStatus);
+                        return;
+                    }
+                    logStart("Load " + MERGED_FILE + " into table");
+                    loadMergedFileIntoTable();
+                    logEnd("Load " + MERGED_FILE + " into table (" + tableModel.getRowCount() + " rows)");
+                    markNewMovies();
+                    statusLabel.setText("Loaded the latest list from the web site"
+                            + (newMovieIds.isEmpty() ? "" : " - " + newMovieIds.size() + " new movies highlighted"));
+                } catch (Exception ex) {
+                    statusLabel.setText(localStatus + " (web site check failed: " + ex.getMessage() + ")");
+                    log("Web site check FAILED: " + ex.getMessage());
+                    LOG.log(Level.WARNING, "Could not check " + SITE_MERGED_URL, ex);
+                } finally {
+                    updateButton.setEnabled(true);
+                }
+            }
+        }.execute();
     }
 
     private void loadExistingDataOnStartup() throws IOException {
@@ -507,6 +556,64 @@ public final class FilterAndJoinTsv extends JFrame {
     // -- Existing logic below (slightly adapted to throw InterruptedException) ---
 
     private enum UpdateResult { UNCHANGED, COMPLETE, COUNTRIES_INCOMPLETE }
+
+    // Download the website's merged.tsv if it was published after the local one was written (or
+    // there is none yet). The copy gets the site's Last-Modified time, so the next check compares
+    // against that. Returns true if a newer list was downloaded.
+    private static boolean downloadSiteMergedIfNewer() throws IOException, InterruptedException {
+        logStart("Check " + SITE_MERGED_URL);
+        Path outputPath = dataFile(MERGED_FILE);
+        Path partPath = dataFile(MERGED_FILE + ".site.part");  // never leave a half-written file in place
+        Instant localTime = Files.exists(outputPath) && Files.size(outputPath) > 0
+                ? Files.getLastModifiedTime(outputPath).toInstant()
+                : null;
+
+        HttpRequest.Builder request = HttpRequest.newBuilder()
+                .uri(URI.create(SITE_MERGED_URL))
+                .timeout(Duration.ofMinutes(2));
+        if (localTime != null) {
+            request.header("If-Modified-Since", HTTP_DATE.format(localTime));  // 304 if not newer
+        }
+
+        try {
+            HttpResponse<Path> response = HTTP_CLIENT.send(request.build(), HttpResponse.BodyHandlers.ofFile(partPath));
+            if (response.statusCode() == 304) {
+                logEnd("Check " + SITE_MERGED_URL + " (not newer)");
+                return false;
+            }
+            if (response.statusCode() != 200) {
+                throw new IOException("HTTP " + response.statusCode() + " downloading " + SITE_MERGED_URL);
+            }
+            Instant siteTime = response.headers().firstValue("Last-Modified")
+                    .map(FilterAndJoinTsv::parseHttpDate)
+                    .orElse(null);
+            // Without a usable Last-Modified there is no telling which list is newer: keep the local one
+            if (localTime != null && (siteTime == null || !siteTime.isAfter(localTime))) {
+                logEnd("Check " + SITE_MERGED_URL + " (not newer)");
+                return false;
+            }
+            if (Files.size(partPath) == 0) {
+                throw new IOException("Empty " + MERGED_FILE + " from " + SITE_MERGED_URL);
+            }
+            replaceAtomically(partPath, outputPath);
+            if (siteTime != null) {
+                Files.setLastModifiedTime(outputPath, FileTime.from(siteTime));
+            }
+            logEnd("Check " + SITE_MERGED_URL + " (downloaded, published "
+                    + (siteTime == null ? "at an unknown time" : HTTP_DATE.format(siteTime)) + ")");
+            return true;
+        } finally {
+            Files.deleteIfExists(partPath);
+        }
+    }
+
+    private static Instant parseHttpDate(String value) {
+        try {
+            return DateTimeFormatter.RFC_1123_DATE_TIME.parse(value, Instant::from);
+        } catch (DateTimeParseException e) {
+            return null;
+        }
+    }
 
     // The whole update, shared by the Update button and the headless --update run:
     // download, filter, look up countries, then merge and save merged.tsv

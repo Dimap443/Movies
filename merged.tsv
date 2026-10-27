@@ -1567,7 +1567,7 @@ tt0031002	movie	The Young in Heart	The Young in Heart	0	1938	\N	90	Comedy,Drama	
 tt0058962	movie	The Bedford Incident	The Bedford Incident	0	1965	\N	102	Drama,Thriller	7.3	6783	United Kingdom,United States	2026-01-30
 tt0117731	movie	Star Trek: First Contact	Star Trek: First Contact	0	1996	\N	111	Action,Adventure,Drama	7.6	139291	United States	2026-01-30
 tt0827503	movie	The Magician	Hokkabaz	0	2006	\N	122	Comedy,Drama	7.4	37005	Turkey	2026-01-30
-tt0083922	movie	Fanny and Alexander	Fanny och Alexander	0	1982	\N	322	Drama	8.1	72022	France,Germany,Sweden	2026-01-30
+tt0083922	movie	Fanny and Alexander	Fanny och Alexander	0	1982	\N	188	Drama	8.1	72022	France,Germany,Sweden	2026-01-30
 tt0056302	movie	The Third Lover	L'oeil du malin	0	1962	\N	80	Drama	7.0	1322	France,Germany,Italy	2026-10-04
 tt1781922	movie	No Escape	No Escape	0	2015	\N	103	Action,Adventure,Drama	6.8	99937	United States	2026-01-30
 tt0056307	movie	On the Beat	On the Beat	0	1962	\N	101	Comedy	6.8	1182	United Kingdom	2026-10-04
@@ -1809,7 +1809,7 @@ tt0237539	movie	Bread and Tulips	Pane e tulipani	0	2000	\N	114	Comedy,Romance	7.
 tt3074780	movie	Supermensch	Supermensch: The Legend of Shep Gordon	0	2013	\N	85	Biography,Documentary,Music	7.4	3498	United States	2026-10-04
 tt0019412	movie	Speedy	Speedy	0	1928	\N	85	Action,Comedy,Family	7.6	4889	United States	2026-10-04
 tt7011130	movie	I Am You	I Am You	0	2019	\N	89	Drama	7.7	1066	Iran	2026-10-04
-tt0021739	movie	The Bitch	La chienne	0	1931	\N	95	Crime,Drama,Romance	7.5	5443	France	2026-01-30
+tt0021739	movie	La Chienne	La chienne	0	1931	\N	95	Crime,Drama,Romance	7.5	5443	France	2026-01-30
 tt1934205	movie	What the Day Owes the Night	Ce que le jour doit à la nuit	0	2012	\N	162	Drama,Romance	7.8	4807	France	2026-10-04
 tt1179773	movie	Summer Days with Coo	Kappa no Kû to natsuyasumi	0	2007	\N	138	Adventure,Animation,Comedy	7.4	2447	Japan	2026-10-04
 tt0079041	movie	Demon Pond	Yashagaike	0	1979	\N	123	Fantasy,Romance	7.0	1325	Japan	2026-10-04
@@ -6747,7 +6747,7 @@ tt0077403	movie	The Cycle	Dayereh mina	0	1977	\N	101	Drama	7.3	1034	Iran	2026-10
 tt1232826	movie	Involuntary	De ofrivilliga	0	2008	\N	98	Drama	6.9	6963	Sweden	2026-01-30
 tt1809387	movie	The War You Don't See	The War You Don't See	0	2010	\N	97	Documentary,War	8.3	1660	United Kingdom	2026-10-04
 tt0077402	movie	Dawn of the Dead	Dawn of the Dead	0	1978	\N	127	Horror,Thriller	7.8	138155	Italy,United States	2026-01-30
-tt0066758	movie	Amar Prem	Amar Prem	0	1972	\N	143	Drama,Musical,Romance	8.1	2230	India	2026-10-04
+tt0066758	movie	Eternal Love	Amar Prem	0	1972	\N	143	Drama,Musical,Romance	8.1	2230	India	2026-10-04
 tt1823672	movie	Chappie	Chappie	0	2015	\N	120	Action,Crime,Drama	6.8	286690	Mexico,South Africa,United States	2026-01-30
 tt1232829	movie	21 Jump Street	21 Jump Street	0	2012	\N	109	Action,Comedy,Crime	7.2	658110	United States	2026-01-30
 tt0039155	movie	Antoine & Antoinette	Antoine et Antoinette	0	1947	\N	84	Comedy,Drama	7.3	1277	France	2026-10-04
@@ -13307,7 +13307,7 @@ tt11416746	movie	Time	Time	0	2020	\N	81	Biography,Documentary	6.8	6611	United St
 tt1723811	movie	Shame	Shame	0	2011	\N	101	Drama	7.2	219338	United Kingdom	2026-01-30
 tt0107358	movie	The Blue Kite	Lan feng zheng	0	1993	\N	140	Drama,History	7.5	3547	Hong Kong,People's Republic of China	2026-10-04
 tt13285394	movie	The Accusation	Les choses humaines	0	2021	\N	138	Crime,Drama	7.0	2424	France	2026-10-04
-tt0097437	movie	Geethanjali	Geethanjali	0	1989	\N	150	Drama,Musical,Romance	8.3	3250	India	2026-10-04
+tt0097437	movie	Gitanjali	Geethanjali	0	1989	\N	150	Drama,Musical,Romance	8.3	3250	India	2026-10-04
 tt0073488	movie	They Fought for Their Country	Oni srazhalis za rodinu	0	1975	\N	158	Drama,War	7.7	3703	Soviet Union	2026-10-04
 tt0794374	movie	Summer Palace	Yi He Yuan	0	2006	\N	158	Drama,History,Romance	7.2	5132	People's Republic of China	2026-10-04
 tt0855852	movie	Kabei: Our Mother	Kâbê	0	2008	\N	133	Drama	7.6	1589	Japan	2026-10-04

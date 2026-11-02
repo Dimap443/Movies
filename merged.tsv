@@ -662,7 +662,7 @@ tt8108200	movie	Sonchiriya	Sonchiriya	0	2019	\N	143	Action,Crime,Drama	7.9	13760
 tt9881586	movie	Rascal Does Not Dream of a Dreaming Girl	Seishun buta yaro wa yumemiru shoujo no yume wo minai	0	2019	\N	89	Animation,Drama,Fantasy	8.3	11347	Japan	2026-01-30
 tt8108206	movie	Saand Ki Aankh	Saand Ki Aankh	0	2019	\N	146	Biography,Drama	7.5	6035	India	2026-01-30
 tt0081148	movie	Alexander the Great	O Megalexandros	0	1980	\N	210	Drama,History	7.4	1335	Greece,Italy	2026-10-04
-tt0069492	movie	Wesele	Wesele	0	1973	\N	102	Drama	6.9	1553	Poland	2026-10-04
+tt0069492	movie	The Wedding	Wesele	0	1973	\N	102	Drama	6.9	1553	Poland	2026-10-04
 tt0068161	movie	The Dawns Here Are Quiet	...A zori zdes tikhie	0	1972	\N	188	Drama,History,War	8.0	5450	Soviet Union	2026-01-30
 tt0082474	movie	The Great Muppet Caper	The Great Muppet Caper	0	1981	\N	97	Adventure,Comedy,Crime	7.1	18686	United Kingdom,United States	2026-01-30
 tt0479884	movie	Crank	Crank	0	2006	\N	88	Action,Crime,Thriller	6.9	280757	United States	2026-01-30
@@ -5243,7 +5243,7 @@ tt4427076	movie	14+	14+	0	2015	\N	102	Drama,Romance	6.9	2482	Russia	2026-10-04
 tt0090152	movie	That's Dancing!	That's Dancing!	0	1985	\N	105	Documentary,Musical	7.2	1248	United States	2026-10-04
 tt0297884	movie	Far from Heaven	Far from Heaven	0	2002	\N	107	Drama,Romance	7.3	52131	United States	2026-01-30
 tt0028165	movie	Redes	Redes	0	1936	\N	65	Drama	7.0	1016	Mexico,United States	2026-10-04
-tt0139820	movie	The Red Angel	Akai tenshi	0	1966	\N	95	Drama,Romance,War	7.7	2291	Japan	2026-10-04
+tt0139820	movie	Red Angel	Akai tenshi	0	1966	\N	95	Drama,Romance,War	7.7	2291	Japan	2026-10-04
 tt0028167	movie	Rembrandt	Rembrandt	0	1936	\N	85	Biography,Drama	7.0	2258	United Kingdom	2026-10-04
 tt0306434	movie	Aankhen	Aankhen	0	2002	\N	165	Crime,Drama,Thriller	7.4	15026	India	2026-01-30
 tt1109624	movie	Paddington	Paddington	0	2014	\N	95	Adventure,Comedy,Family	7.3	159965	France,United Kingdom	2026-01-30
@@ -7895,7 +7895,7 @@ tt1410063	movie	The Flowers of War	Jin ling shi san chai	0	2011	\N	146	Drama,His
 tt1340425	movie	DMT: The Spirit Molecule	DMT: The Spirit Molecule	0	2010	\N	75	Documentary	7.1	4969	United States	2026-10-04
 tt14831708	movie	Diary of a Fleeting Affair	Chronique d'une liaison passagère	0	2022	\N	100	Comedy,Drama,Romance	6.8	2386	France	2026-10-04
 tt15115102	movie	Another World	Un autre monde	0	2021	\N	96	Drama	7.0	2892	France	2026-10-04
-tt35518410	movie	Dridam	Dridam	0	2026	\N	128	Crime,Drama,Thriller	7.0	5861	India	2026-10-04
+tt35518410	movie	Dridam	Dridam	0	2026	\N	128	Crime,Drama,Mystery	7.0	5861	India	2026-10-04
 tt0366840	movie	Okkadu	Okkadu	0	2003	\N	171	Action,Drama,Romance	8.0	11838	India	2026-01-30
 tt10981202	movie	Her Blue Sky	Sora no aosa o shiru hito yo	0	2019	\N	106	Animation,Drama,Fantasy	6.8	2395	Japan	2026-10-04
 tt0449662	movie	Tu pa tam	Tu pa tam	0	2004	\N	92	Action,Adventure,Comedy	7.1	1219	Slovenia	2026-10-04
@@ -8996,7 +8996,7 @@ tt0124770	movie	Patlabor 2: The Movie	Kidô Keisatsu Patorebâ 2	0	1993	\N	113	A
 tt2980794	movie	Highway	Highway	0	2014	\N	133	Crime,Drama,Romance	7.6	33300	India	2026-01-30
 tt36575995	movie	Kadukka	Kadukka	0	2025	\N	120	Comedy	6.8	3164	India	2026-10-04
 tt1748278	movie	Scabbard Samurai	Saya-zamurai	0	2010	\N	103	Comedy,Drama	6.8	1255	Japan	2026-10-04
-tt0339489	movie	Palabras encadenadas	Palabras encadenadas	0	2003	\N	89	Crime,Drama,Thriller	6.9	2634	Spain	2026-10-04
+tt0339489	movie	Killing Words	Palabras encadenadas	0	2003	\N	89	Crime,Drama,Thriller	6.9	2634	Spain	2026-10-04
 tt0039504	movie	Ivy	Ivy	0	1947	\N	99	Crime,Drama,Thriller	7.0	1398	United States	2026-10-04
 tt0844347	movie	Midnight Sun	Taiyô no uta	0	2006	\N	119	Drama,Music,Romance	7.1	2057	Japan	2026-10-04
 tt38875479	movie	Aavaa De	Aavaa De	0	2025	\N	136	Comedy,Romance	8.1	1081	\N	2026-10-04
@@ -10164,7 +10164,7 @@ tt9058654	movie	Dinner in America	Dinner in America	0	2020	\N	106	Comedy,Drama,M
 tt0280491	movie	Bloody Sunday	Bloody Sunday	0	2002	\N	111	Drama,History,War	7.6	26963	Ireland,United Kingdom	2026-01-30
 tt11893274	movie	Downfall: The Case Against Boeing	Downfall: The Case Against Boeing	0	2022	\N	89	Documentary	7.4	15158	United States	2026-01-30
 tt0040761	movie	Scott of the Antarctic	Scott of the Antarctic	0	1948	\N	111	Action,Adventure,Biography	7.0	2859	United Kingdom	2026-10-04
-tt35682855	movie	Anbil Avan	Anbil Avan	0	2026	\N	154	Action,Drama,Romance	9.5	2473	India	2026-10-13
+tt35682855	movie	Anbil Avan	Anbil Avan	0	2026	\N	154	\N	9.5	2473	India	2026-10-13
 tt0039772	movie	Riffraff	Riffraff	0	1947	\N	80	Adventure,Comedy,Drama	6.8	1124	United States	2026-10-04
 tt0040765	movie	The Search	The Search	0	1948	\N	104	Drama,War	7.8	5431	Germany,Switzerland,United States	2026-01-30
 tt5584796	movie	Tehran Taboo	Teheran Tabu	0	2017	\N	96	Animation,Drama	7.1	5451	Austria,Germany	2026-01-30
@@ -11479,7 +11479,7 @@ tt0254463	movie	A Run for Money	Kaç Para Kaç	0	1999	\N	100	Drama	7.5	4312	Turk
 tt1560747	movie	The Master	The Master	0	2012	\N	138	Drama	7.1	204319	United States	2026-01-30
 tt26420234	movie	Music by John Williams	Music by John Williams	0	2024	\N	105	Biography,Documentary,Music	8.2	6428	United States	2026-01-30
 tt0280760	movie	Igby Goes Down	Igby Goes Down	0	2002	\N	98	Comedy,Drama	6.8	37684	United States	2026-01-30
-tt0807721	movie	Jellyfish	Meduzot	0	2007	\N	78	Drama	7.0	2815	France,Israel	2026-10-04
+tt0807721	movie	Jellyfish	Meduzot	0	2007	\N	78	Comedy,Drama	7.0	2815	France,Israel	2026-10-04
 tt0025410	movie	Little Miss Marker	Little Miss Marker	0	1934	\N	80	Adventure,Comedy,Drama	6.9	1646	United States	2026-10-04
 tt2219650	movie	Seymour: An Introduction	Seymour: An Introduction	0	2014	\N	84	Biography,Documentary,Music	7.5	1262	United States	2026-10-04
 tt0097027	movie	Casualties of War	Casualties of War	0	1989	\N	113	Action,Crime,Drama	7.1	52558	United States	2026-01-30
@@ -16121,7 +16121,7 @@ tt7564016	movie	Chase	Chase	0	2022	\N	143	Crime,Mystery,Thriller	7.5	1700	India	
 tt0082088	movie	Blood Wedding	Bodas de sangre	0	1981	\N	67	Drama,Music,Romance	7.4	2242	France,Spain	2026-10-04
 tt12246266	movie	200 Meters	200 Meters	0	2020	\N	96	Adventure,Drama	7.2	2536	Palestine	2026-10-04
 tt0082089	movie	Body Heat	Body Heat	0	1981	\N	113	Crime,Drama,Romance	7.4	45067	United States	2026-01-30
-tt0082087	movie	Der Bockerer	Der Bockerer	0	1981	\N	104	Comedy,Drama,History	8.1	1106	Austria,Germany	2026-10-04
+tt0082087	movie	The Stubborn Mule	Der Bockerer	0	1981	\N	104	Comedy,Drama,History	8.1	1106	Austria,Germany	2026-10-04
 tt0142238	movie	Dragon Ball Z: Bojack Unbound	Dragon Ball Z: Ginga Giri-Giri!! Butchigiri no Sugoi Yatsu	0	1993	\N	50	Action,Animation,Fantasy	7.1	8434	Japan	2026-01-30
 tt1587707	movie	Exit Through the Gift Shop	Exit Through the Gift Shop	0	2010	\N	87	Comedy,Crime,Documentary	7.9	70839	United Kingdom,United States	2026-01-30
 tt1563738	movie	One Day	One Day	0	2011	\N	107	Drama,Romance	7.0	182072	United Kingdom,United States	2026-01-30
@@ -16464,7 +16464,7 @@ tt0071411	movie	Dersu Uzala	Dersu Uzala	0	1975	\N	142	Adventure,Biography,Drama	
 tt9419884	movie	Doctor Strange in the Multiverse of Madness	Doctor Strange in the Multiverse of Madness	0	2022	\N	126	Action,Adventure,Fantasy	6.8	565578	United States	2026-01-30
 tt0084728	movie	Starstruck	Starstruck	0	1982	\N	105	Comedy,Drama,Musical	6.8	1395	Australia	2026-10-04
 tt1320297	movie	We Can Do That	Si può fare	0	2008	\N	111	Comedy	7.5	1920	Italy	2026-10-04
-tt36187539	movie	The Rays and Shadows	Les rayons et les ombres	0	2026	\N	199	Biography,Drama,History	7.3	1487	France	2026-10-04
+tt36187539	movie	The Rays and Shadows	Les Rayons et les Ombres	0	2026	\N	199	Biography,Drama,History	7.3	1487	France	2026-10-04
 tt0060758	movie	Black Girl	La noire de...	0	1966	\N	65	Drama	7.4	7698	France,Senegal	2026-01-30
 tt10867504	movie	Fan	Fan	0	2019	\N	145	Drama	6.8	1113	India	2026-10-04
 tt3666024	movie	The Red Turtle	La tortue rouge	0	2016	\N	80	Animation,Drama,Family	7.5	42881	Belgium,France,Japan	2026-01-30

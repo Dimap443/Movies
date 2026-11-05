@@ -7016,7 +7016,7 @@ tt0113568	movie	Ghost in the Shell	Kôkaku kidôtai	0	1995	\N	83	Action,Animatio
 tt0151804	movie	Office Space	Office Space	0	1999	\N	89	Comedy	7.6	313119	United States	2026-01-30
 tt2845796	movie	Attakathi	Attakathi	0	2012	\N	130	Comedy,Romance	7.2	1309	India	2026-10-04
 tt0390205	movie	Once Upon a Time in High School: The Spirit of Jeet Kune Do	Maljukgeori janhoksa	0	2004	\N	116	Action,Drama,History	7.4	2948	South Korea	2026-10-04
-tt33175825	movie	Attack on Titan: The Last Attack	Shingeki no Kyojin: The Last Attack	0	2024	\N	145	Action,Adventure,Animation	8.9	40130	Japan	2026-01-30
+tt33175825	movie	Attack on Titan: The Last Attack	Shingeki no Kyojin: The Last Attack	0	2024	\N	144	Action,Adventure,Animation	8.9	40130	Japan	2026-01-30
 tt0463854	movie	28 Weeks Later	28 Weeks Later	0	2007	\N	100	Horror,Sci-Fi	6.8	370404	Spain,United Kingdom	2026-01-30
 tt1883251	movie	America's Most Hated Family in Crisis	Louis Theroux: The Most Hated Family in America in Crisis	0	2011	\N	60	Documentary	7.5	2901	United Kingdom	2026-10-04
 tt4429128	movie	Papanasam	Papanasam	0	2015	\N	179	Crime,Drama,Mystery	8.4	9714	India	2026-01-30
@@ -7168,7 +7168,7 @@ tt3890160	movie	Baby Driver	Baby Driver	0	2017	\N	113	Action,Crime,Drama	7.5	699
 tt21800888	movie	6/45	6/45	0	2022	\N	113	Comedy	7.0	2171	South Korea	2026-10-04
 tt5996202	movie	The Net	Geumul	0	2016	\N	114	Drama	7.4	5155	South Korea	2026-10-04
 tt0221559	movie	On the Edge	On the Edge	0	2001	\N	85	Drama	6.9	5318	Ireland	2026-01-30
-tt39089210	movie	All Pass	All Pass	0	2026	\N	\N	Drama,Family	9.4	1086	India	2026-10-17
+tt39089210	movie	All Pass	All Pass	0	2026	\N	122	Drama,Family	9.4	1086	India	2026-10-17
 tt0052190	movie	The Sheepman	The Sheepman	0	1958	\N	85	Western	6.8	3502	United States	2026-10-04
 tt0076155	movie	The Man Who Loved Women	L'homme qui aimait les femmes	0	1977	\N	120	Comedy,Drama,Romance	7.3	8263	France	2026-01-30
 tt3011894	movie	Wild Tales	Relatos salvajes	0	2014	\N	122	Comedy,Drama,Thriller	8.1	242882	Argentina,Spain	2026-01-30
@@ -8333,7 +8333,7 @@ tt0038120	movie	Story of G.I. Joe	Story of G.I. Joe	0	1945	\N	108	Biography,Dram
 tt13484872	movie	Stealing Raden Saleh	Mencuri Raden Saleh	0	2022	\N	154	Action,Crime,Drama	7.3	3878	Indonesia	2026-10-04
 tt0101927	movie	War of the Birds	Fuglekrigen i Kanøfleskoven	0	1990	\N	68	Adventure,Animation,Comedy	7.1	1000	Denmark,Sweden	2026-10-13
 tt0027440	movie	Charlie Chan at the Opera	Charlie Chan at the Opera	0	1936	\N	68	Crime,Mystery	7.1	2495	United States	2026-10-04
-tt4744132	movie	Sudden Rain	Hotath Bristi	0	1998	\N	182	Drama,Romance	8.1	1020	Bangladesh,India	2026-10-04
+tt4744132	movie	Hotath Bristi	Hotath Bristi	0	1998	\N	182	Drama,Romance	8.1	1020	Bangladesh,India	2026-10-04
 tt0027441	movie	Charlie Chan at the Race Track	Charlie Chan at the Race Track	0	1936	\N	70	Crime,Mystery	7.1	1755	United States	2026-10-04
 tt0028773	movie	Dead End	Dead End	0	1937	\N	93	Crime,Drama,Film-Noir	7.2	9776	United States	2026-01-30
 tt0053740	movie	The Concrete Jungle	The Criminal	0	1960	\N	86	Crime,Drama,Thriller	6.8	1992	United Kingdom	2026-10-04
@@ -15338,7 +15338,7 @@ tt0059550	movie	Operation 'Y' & Shurik's Other Adventures	Operatsiya 'Y' i drugi
 tt0167260	movie	The Lord of the Rings: The Return of the King	The Lord of the Rings: The Return of the King	0	2003	\N	201	Adventure,Drama,Fantasy	9.0	2205977	New Zealand,United States	2026-01-30
 tt0060545	movie	I Knew Her Well	Io la conoscevo bene	0	1965	\N	115	Drama	7.6	3933	France,Germany,Italy	2026-10-04
 tt0059555	movie	Othello	Othello	0	1965	\N	165	Drama	7.0	1815	United Kingdom	2026-10-04
-tt0061876	movie	The Commissar	Komissar	0	1967	\N	110	Drama,War	7.5	1864	Soviet Union	2026-10-04
+tt0061876	movie	The Commissar	Komissar	0	1987	\N	110	Drama,War	7.5	1864	Soviet Union	2026-10-04
 tt0419279	movie	Yesterday	Yesterday	0	2004	\N	90	Drama	7.5	2610	South Africa,United States	2026-10-04
 tt0060543	movie	Intimate Lighting	Intimní osvetlení	0	1965	\N	71	Comedy,Drama,Music	7.1	1863	Czechoslovakia	2026-10-04
 tt2070776	movie	Populaire	Populaire	0	2012	\N	111	Comedy,Romance,Sport	6.8	13272	Belgium,France	2026-01-30

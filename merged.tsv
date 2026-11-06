@@ -10633,7 +10633,7 @@ tt0111797	movie	Eat Drink Man Woman	Yin shi nan nu	0	1994	\N	124	Comedy,Drama,Ro
 tt0040834	movie	State of the Union	State of the Union	0	1948	\N	124	Comedy,Drama	7.2	4726	United States	2026-10-04
 tt1869716	movie	The East	The East	0	2013	\N	116	Adventure,Crime,Drama	6.8	54410	United Kingdom,United States	2026-01-30
 tt5896470	movie	Pravegaya	Pravegaya	0	2015	\N	145	Action,Crime	7.3	1000	Sri Lanka	2026-10-29
-tt33764258	movie	The Odyssey	The Odyssey	0	2026	\N	172	Action,Adventure,Fantasy	8.4	544281	United Kingdom,United States	2026-10-04
+tt33764258	movie	The Odyssey	The Odyssey	0	2026	\N	172	Action,Adventure,Drama	8.4	544281	United Kingdom,United States	2026-10-04
 tt9742362	movie	Mallesham	Mallesham	0	2019	\N	131	Biography	8.2	1281	India	2026-10-04
 tt9779658	movie	Master Cheng	Mestari Cheng	0	2019	\N	114	Comedy,Drama,Romance	6.9	3590	Finland	2026-10-04
 tt4173170	movie	The Eternal Road	Ikitie	0	2017	\N	103	Drama,History	7.1	2996	Finland	2026-10-04
@@ -11396,7 +11396,7 @@ tt1499666	movie	Castaway on the Moon	Kimssi pyoryugi	0	2009	\N	116	Comedy,Drama,
 tt26084136	movie	Being Mary Tyler Moore	Being Mary Tyler Moore	0	2023	\N	119	Documentary	7.5	1346	United States	2026-10-04
 tt0435623	movie	Conversations with Other Women	Conversations with Other Women	0	2005	\N	84	Comedy,Drama,Romance	6.9	13652	United Kingdom,United States	2026-01-30
 tt0169102	movie	Lagaan: Once Upon a Time in India	Lagaan: Once Upon a Time in India	0	2001	\N	224	Drama,Musical,Sport	8.1	130971	India	2026-01-30
-tt43986787	movie	Orijinal	Orijinal	0	2026	\N	\N	Comedy,Drama,Sci-Fi	8.3	1027	India	2026-10-29
+tt43986787	movie	Orijinal	Orijinal	0	2026	\N	132	Comedy,Drama,Sci-Fi	8.3	1027	India	2026-10-29
 tt0435625	movie	The Descent	The Descent	0	2005	\N	99	Adventure,Horror,Thriller	7.2	279713	United Kingdom	2026-01-30
 tt0460791	movie	The Fall	The Fall	0	2006	\N	117	Adventure,Drama,Fantasy	7.8	132653	India,United Kingdom,United States	2026-01-30
 tt0929412	movie	Quiet Chaos	Caos calmo	0	2008	\N	105	Drama,Romance	6.8	4273	Italy	2026-10-04
@@ -12004,7 +12004,7 @@ tt0049518	movie	The Silent World	Le monde du silence	0	1956	\N	86	Adventure,Docu
 tt0243609	movie	To End All Wars	To End All Wars	0	2001	\N	117	Action,Drama,War	6.9	12408	United Kingdom,United States	2026-01-30
 tt0051818	movie	King Creole	King Creole	0	1958	\N	116	Crime,Drama,Musical	7.0	7248	United States	2026-01-30
 tt1233474	movie	The Garden of Sinners: The Hollow Shrine	Gekijô ban Kara no kyôkai: Dai yon shô - Garan no dô	0	2008	\N	46	Action,Animation,Crime	7.1	2186	Japan	2026-10-04
-tt0386064	movie	Tae Guk Gi: The Brotherhood of War	Taegukgi hwinallimyeo	0	2004	\N	140	Action,Drama,War	8.0	42657	South Korea	2026-01-30
+tt0386064	movie	Tae Guk Gi: The Brotherhood of War	Taegukgi hwinallimyeo	0	2004	\N	140	Action,Drama,Horror	8.0	42657	South Korea	2026-01-30
 tt0049513	movie	Moby Dick	Moby Dick	0	1956	\N	116	Adventure,Drama	7.3	23535	United Kingdom,United States	2026-01-30
 tt5147042	movie	Unseen	Unseen	0	2016	\N	75	Crime,Documentary	6.8	1386	United States	2026-10-04
 tt0483578	movie	Love and Honor	Bushi no ichibun	0	2006	\N	122	Drama,History,Romance	7.6	4662	Japan	2026-10-04
@@ -16984,7 +16984,7 @@ tt0034583	movie	Casablanca	Casablanca	0	1942	\N	102	Drama,Romance,War	8.5	663865
 tt0240890	movie	Serendipity	Serendipity	0	2001	\N	90	Comedy,Romance	6.9	133516	United States	2026-01-30
 tt0262264	movie	Lotus Lantern	Bao lian deng	0	1999	\N	85	Action,Adventure,Animation	6.9	1039	People's Republic of China	2026-10-04
 tt4137902	movie	Dark Horse	Dark Horse	0	2000	\N	85	Documentary,Drama,Sport	7.3	1377	United Kingdom	2026-10-04
-tt0057202	movie	The Lovely Month of May	Le joli mai	0	1963	\N	165	Documentary	7.8	1009	France	2026-10-04
+tt0057202	movie	The Lovely Month of May	Le joli mai	0	1963	\N	145	Documentary	7.8	1009	France	2026-10-04
 tt0311648	movie	Pieces of April	Pieces of April	0	2003	\N	80	Comedy,Drama	7.0	23372	United States	2026-01-30
 tt2997766	movie	De nieuwe wildernis	De nieuwe wildernis	0	2013	\N	97	Documentary	7.3	1512	Netherlands	2026-10-04
 tt1153690	movie	Ballast	Ballast	0	2008	\N	96	Drama	6.9	2499	United States	2026-10-04

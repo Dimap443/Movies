@@ -1178,7 +1178,7 @@ public final class FilterAndJoinTsv extends JFrame {
                     // date added: kept from the previous build, today for a movie new to the list
                     sb.append('\t').append(datesAdded == null ? MISSING : datesAdded.getOrDefault(key, today));
 
-                    writer.write(sb.toString());
+                    writer.append(sb);
                     writer.newLine();
                 }
             }
